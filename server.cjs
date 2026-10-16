@@ -11,7 +11,28 @@
 //     DISCORD_BOT_TOKEN=xxxxxxxx
 //     SESSION_SECRET=اي_نص_طويل_عشوائي      (اختياري)
 // أو بمتغيرات البيئة. وتأكد إن .env مو مرفوع على GitHub.
+const fs = require('fs');
+const path = require('path');
 
+// مسار الملف الثابت بالـ Volume ومسار الملف القادم من GitHub
+const dataDir = process.env.DATA_DIR || './';
+const volumeFilePath = path.join(dataDir, 'ops-data.json');
+const localGithubFilePath = path.join(__dirname, 'ops-data.json');
+
+try {
+  // إذا الملف مش موجود جوا الـ Volume لكنه موجود مع ملفات المشروع من GitHub
+  if (!fs.existsSync(volumeFilePath) && fs.existsSync(localGithubFilePath)) {
+    // أنشئ المجلد إذا مش موجود
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    // انسخ الملف من المشروع إلى الـ Volume فوراً
+    fs.copyFileSync(localGithubFilePath, volumeFilePath);
+    console.log('✅ تم نسخ ops-data.json من GitHub إلى الـ Volume بنجاح!');
+  }
+} catch (err) {
+  console.error('❌ خطوة نقل الملف للـ Volume فشلت:', err);
+}
 const express = require('express');
 const session = require('express-session');
 const crypto = require('crypto');
@@ -814,6 +835,36 @@ app.get('/api/admin/premium', auth, (req, res) => {
   }
   dirty = true;
   res.json({ ok: true, guild: gid, until: p.until });
+});// ===== استرجاع ملف البيانات (مؤقت - احذفه بعد الاستخدام) =====
+app.get('/restore', (req, res) => {
+  if (!req.session.user || !OWNER_IDS.includes(req.session.user.id)) return res.status(403).send('forbidden');
+  res.type('html').send(`<!doctype html><meta charset="utf-8"><title>Restore</title>
+<body style="font-family:sans-serif;background:#111;color:#fff;padding:40px;direction:rtl">
+<h2>استرجاع ops-data.json</h2>
+<input type="file" id="f" accept=".json">
+<button id="b">رفع</button>
+<pre id="o"></pre>
+<script>
+document.getElementById('b').onclick = async () => {
+  const f = document.getElementById('f').files[0];
+  if (!f) return;
+  const text = await f.text();
+  const r = await fetch('/api/admin/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: text }) });
+  document.getElementById('o').textContent = await r.text();
+};
+</script></body>`);
+});
+
+app.post('/api/admin/restore', (req, res) => {
+  if (!req.session.user || !OWNER_IDS.includes(req.session.user.id)) return res.status(403).json({ error: 'forbidden' });
+  let parsed;
+  try { parsed = JSON.parse(String((req.body || {}).data || '')); } catch (_) { return res.status(400).json({ error: 'bad_json' }); }
+  if (!parsed || typeof parsed !== 'object' || !parsed.guilds) return res.status(400).json({ error: 'not_ops_data' });
+  try { fs.copyFileSync(DB_PATH, DB_PATH + '.before-restore'); } catch (_) {}
+  db = Object.assign({ guilds: {}, premium: {}, settings: {} }, parsed);
+  dirty = true;
+  save();
+  res.json({ ok: true, guilds: Object.keys(db.guilds).length, premium: Object.keys(db.premium).length });
 });
 // ===== شراء البريميوم بعملة OPS =====
 const PREMIUM_COIN_PRICE = 200000;          // السعر
