@@ -11,7 +11,8 @@
 //     DISCORD_BOT_TOKEN=xxxxxxxx
 //     SESSION_SECRET=اي_نص_طويل_عشوائي      (اختياري)
 // أو بمتغيرات البيئة. وتأكد إن .env مو مرفوع على GitHub.
-
+const { Client, GatewayIntentBits, Events, Routes, PermissionFlagsBits, EmbedBuilder, ChannelType, Partials, AuditLogEvent,
+  TextInputBuilder, TextInputStyle, ModalBuilder, ActionRowBuilder, UserSelectMenuBuilder } = require('discord.js');
 const express = require('express');
 const session = require('express-session');
 const crypto = require('crypto');
@@ -39,7 +40,7 @@ const CONFIG = {
   CLIENT_ID: '1553099566239318086',      // Application ID  (OAuth2) — مو سر
   CLIENT_SECRET: '',                     // ← لا تكتبه هون: DISCORD_CLIENT_SECRET بملف .env
   BOT_TOKEN: '',                         // ← لا تكتبه هون: DISCORD_BOT_TOKEN بملف .env
-  REDIRECT_URI: 'https://ops-production-d63c.up.railway.app', // لازم يطابق Redirects في Portal
+  REDIRECT_URI: 'https://ops-production-d63c.up.railway.app/auth/discord/callback', // لازم يطابق Redirects في Portal
   SUPPORT_URL: 'https://discord.gg/wVwjHms4y', // رابط سيرفر الدعم / تذاكر الشراء
   OWNER_IDS: ['1391956716853264414'],    // ايديات حسابات ديسكورد اللي بتقدر تفعّل البريميوم وتدير مكتبة الصور
   TIMEZONE: 'Asia/Amman',                // توقيت حساب اليومي/الأسبوعي
@@ -84,6 +85,8 @@ const INVITE_URL =
   new URLSearchParams({ client_id: CLIENT_ID, scope: 'bot applications.commands', permissions: CONFIG.BOT_PERMISSIONS });
 
 // =====================  التخزين (ملف JSON)  =====================
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_PATH = path.resolve(__dirname, CONFIG.DB_FILE);
 let db = { guilds: {}, premium: {}, settings: {} };
 try {
@@ -5456,6 +5459,7 @@ app.put('/api/guild/:id/mysec', auth, wrap(async (req, res) => {
   S(info.id).mysec = { enabled: b.enabled === true };
   dirty = true;
   res.json({ ok: true });
+
 }));// ===================== نظام العملات (RT Coin) =====================
 const ECO_VIP_ROLE = '1544858160982917261'; // رتبة المكافأة المميزة (غيّرها لرتبتك)
 const ECO_ADMIN_GUILDS = ['1544077828151054537', '1537751084171272213']; // السيرفرات اللي فيها اعطي/سحب
