@@ -1,0 +1,11 @@
+   node_modules
+   .env
+   ops-data.json
+   ops-data.json.tmp
+   ops-data.json.bad
+   ops-sessions.json
+   ops-sessions.json.tmp
+   ops-images
+   ops-welcome
+   ops-tickets
+   ops-autoline
