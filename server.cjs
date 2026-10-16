@@ -11,22 +11,16 @@
 //     DISCORD_BOT_TOKEN=xxxxxxxx
 //     SESSION_SECRET=اي_نص_طويل_عشوائي      (اختياري)
 // أو بمتغيرات البيئة. وتأكد إن .env مو مرفوع على GitHub.
-const fs = require('fs');
-const path = require('path');
-
-// مسار الملف الثابت بالـ Volume ومسار الملف القادم من GitHub
-const dataDir = process.env.DATA_DIR || './';
-const volumeFilePath = path.join(dataDir, 'ops-data.json');
-const localGithubFilePath = path.join(__dirname, 'ops-data.json');
-
+// ===== كود نسخ الملف للـ Volume بدون تكرار التعريفات =====
 try {
-  // إذا الملف مش موجود جوا الـ Volume لكنه موجود مع ملفات المشروع من GitHub
+  const dataDir = process.env.DATA_DIR || './';
+  const volumeFilePath = path.join(dataDir, 'ops-data.json');
+  const localGithubFilePath = path.join(__dirname, 'ops-data.json');
+
   if (!fs.existsSync(volumeFilePath) && fs.existsSync(localGithubFilePath)) {
-    // أنشئ المجلد إذا مش موجود
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
-    // انسخ الملف من المشروع إلى الـ Volume فوراً
     fs.copyFileSync(localGithubFilePath, volumeFilePath);
     console.log('✅ تم نسخ ops-data.json من GitHub إلى الـ Volume بنجاح!');
   }
