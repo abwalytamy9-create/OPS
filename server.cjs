@@ -87,6 +87,7 @@ const INVITE_URL =
 
 // =====================  التخزين (ملف JSON)  =====================
 const DB_PATH = path.resolve(DATA_DIR, CONFIG.DB_FILE);
+console.log('DB path:', DB_PATH, '| exists:', fs.existsSync(DB_PATH));
 let db = { guilds: {}, premium: {}, settings: {} };
 try {
   db = Object.assign(db, JSON.parse(fs.readFileSync(DB_PATH, 'utf8')));
