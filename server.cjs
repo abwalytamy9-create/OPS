@@ -20,6 +20,7 @@ const path = require('path');
 const { Client, GatewayIntentBits, Events, Routes, PermissionFlagsBits, EmbedBuilder, ChannelType, Partials, AuditLogEvent,
   ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, UserSelectMenuBuilder } = require('discord.js');
 
+const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname;
 // تحميل ملف .env (بدون مكتبات إضافية)
 try {
   for (const line of fs.readFileSync(path.join(__dirname, '.env'), 'utf8').split(/\r?\n/)) {
@@ -66,7 +67,7 @@ const SESSION_SECRET =
   process.env.SESSION_SECRET || CONFIG.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const isProd = process.env.NODE_ENV === 'production' || CONFIG.PRODUCTION;
 path.resolve(DATA_DIR, CONFIG.DB_FILE)
-const DATA_DIR = process.env.DATA_DIR || __dirname;
+
 // ===== روابط الصور (غيّرها هون كل ما تنتهي صلاحيتها) =====
 const BG_URL = 'https://cdn.discordapp.com/attachments/1553738433506189414/1560725064725438524/00ddcbc2c5a70d1c.png?ex=6ad3c1fc&is=6ad2707c&hm=5ccc2893bc5914c30ae5e0a54ac15d6cd03aa5659f4bbc8e6df5aa6b7a333d67&';
 const LOGO_URL = 'https://cdn.discordapp.com/attachments/1553738433506189414/1560725103849898024/Gemini_Generated_Image_cfloegcfloegcflo.png?ex=6ad3c205&is=6ad27085&hm=910f08b4b759aabbbb91b87a2cf0980efef84310097b3fe66307c08c1e3c88af&';
