@@ -65,8 +65,8 @@ const OWNER_IDS = (CONFIG.OWNER_IDS || []).map(String);
 const SESSION_SECRET =
   process.env.SESSION_SECRET || CONFIG.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const isProd = process.env.NODE_ENV === 'production' || CONFIG.PRODUCTION;
-const DISCORD_API = 'https://discord.com/api/v10';
-
+path.resolve(DATA_DIR, CONFIG.DB_FILE)
+const DATA_DIR = process.env.DATA_DIR || __dirname;
 // ===== روابط الصور (غيّرها هون كل ما تنتهي صلاحيتها) =====
 const BG_URL = 'https://cdn.discordapp.com/attachments/1553738433506189414/1560725064725438524/00ddcbc2c5a70d1c.png?ex=6ad3c1fc&is=6ad2707c&hm=5ccc2893bc5914c30ae5e0a54ac15d6cd03aa5659f4bbc8e6df5aa6b7a333d67&';
 const LOGO_URL = 'https://cdn.discordapp.com/attachments/1553738433506189414/1560725103849898024/Gemini_Generated_Image_cfloegcfloegcflo.png?ex=6ad3c205&is=6ad27085&hm=910f08b4b759aabbbb91b87a2cf0980efef84310097b3fe66307c08c1e3c88af&';
@@ -85,7 +85,7 @@ const INVITE_URL =
   new URLSearchParams({ client_id: CLIENT_ID, scope: 'bot applications.commands', permissions: CONFIG.BOT_PERMISSIONS });
 
 // =====================  التخزين (ملف JSON)  =====================
-const DB_PATH = path.resolve(__dirname, CONFIG.DB_FILE);
+const DB_PATH = path.resolve(DATA_DIR, CONFIG.DB_FILE);
 let db = { guilds: {}, premium: {}, settings: {} };
 try {
   db = Object.assign(db, JSON.parse(fs.readFileSync(DB_PATH, 'utf8')));
@@ -474,7 +474,7 @@ app.use(
   session({
     name: 'ops.sid',
     secret: SESSION_SECRET,
-    store: new FileStore(path.resolve(__dirname, 'ops-sessions.json')),
+    store: new FileStore(path.resolve(DATA_DIR, 'ops-sessions.json')),
     resave: false,
     saveUninitialized: false,
     rolling: true, // كل زيارة بتجدد المدة
@@ -965,7 +965,7 @@ function textChannels(gid) {
 // =====================  اللوقات + الترحيب والمغادرة  =====================
 let canvasLib = null;
 try { canvasLib = require('@napi-rs/canvas'); } catch (_) { /* اختياري: npm i @napi-rs/canvas لتوليد صورة الترحيب */ }
-const WEL_DIR = path.resolve(__dirname, 'ops-welcome');
+const WEL_DIR = path.resolve(DATA_DIR, 'ops-welcome');
 const BG_EXT = { png: 'png', jpeg: 'jpg', gif: 'gif', webp: 'webp' };
 
 // =====================  تعريف اللوقات  =====================
@@ -4029,7 +4029,7 @@ function onGuard(msg) {
 }
 
 // ---------- حماية الصور ----------
-const IMG_DIR = path.resolve(__dirname, 'ops-images');
+const IMG_DIR = path.resolve(DATA_DIR, 'ops-images');
 const imgItems = () => (db.imglib = db.imglib || { items: [] }).items;
 const IMG_ACTIONS = ['delete', 'timeout', 'kick', 'ban'];
 const IMG_EXT = { png: 'png', jpeg: 'jpg', gif: 'gif', webp: 'webp' };
@@ -4949,7 +4949,7 @@ const tkState = (gid) => { const s = dbk('tickets', gid); s.n = s.n || 0; s.room
 const tkBusy = new Set();
 
 // ---------- الصور المرفوعة ----------
-const TK_DIR = path.resolve(__dirname, 'ops-tickets');
+const TK_DIR = path.resolve(DATA_DIR, 'ops-tickets');
 const TK_IMG_RE = /^up:([a-f0-9]{10}\.(?:png|jpg|gif|webp))$/;
 function tkImgFile(ref) {
   const m = TK_IMG_RE.exec(String(ref || ''));
@@ -5844,7 +5844,7 @@ async function sprSweep() {
   }
 }// ===================== نظام الألوان =====================
 // ===================== الخط التلقائي (VIP) =====================
-const AL_DIR = path.resolve(__dirname, 'ops-autoline');
+const AL_DIR = path.resolve(DATA_DIR, 'ops-autoline');
 const AL_IMG_RE = /^up:([a-f0-9]{10}\.(?:png|jpg|gif|webp))$/;
 const alLast = new Map(); // channelId -> آخر رسالة صورة
 
