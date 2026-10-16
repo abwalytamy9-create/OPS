@@ -1,8 +1,0 @@
-node_modules
-.env
-ops-data.json
-ops-sessions.json
-ops-welcome/
-ops-images/
-ops-tickets/
-ops-autoline/
