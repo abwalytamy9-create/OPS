@@ -41,7 +41,7 @@ const CONFIG = {
   CLIENT_ID: '1553099566239318086',      // Application ID  (OAuth2) — مو سر
   CLIENT_SECRET: '',                     // ← لا تكتبه هون: DISCORD_CLIENT_SECRET بملف .env
   BOT_TOKEN: '',                         // ← لا تكتبه هون: DISCORD_BOT_TOKEN بملف .env
-  REDIRECT_URI: 'https:/ops-system-dashboard.up.railway.app/auth/callback', // لازم يطابق Redirects في Portal
+  REDIRECT_URI: 'https://ops-system-dashboard.up.railway.app/auth/discord/callback', // لازم يطابق Redirects في Portal
   SUPPORT_URL: 'https://discord.gg/wVwjHms4y', // رابط سيرفر الدعم / تذاكر الشراء
   OWNER_IDS: ['1391956716853264414'],    // ايديات حسابات ديسكورد اللي بتقدر تفعّل البريميوم وتدير مكتبة الصور
   TIMEZONE: 'Asia/Amman',                // توقيت حساب اليومي/الأسبوعي
@@ -66,7 +66,7 @@ const OWNER_IDS = (CONFIG.OWNER_IDS || []).map(String);
 const SESSION_SECRET =
   process.env.SESSION_SECRET || CONFIG.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const isProd = process.env.NODE_ENV === 'production' || CONFIG.PRODUCTION;
-path.resolve(DATA_DIR, CONFIG.DB_FILE)
+const DISCORD_API = 'https://discord.com/api/v10';
 
 // ===== روابط الصور (غيّرها هون كل ما تنتهي صلاحيتها) =====
 const BG_URL = 'https://cdn.discordapp.com/attachments/1553738433506189414/1560725064725438524/00ddcbc2c5a70d1c.png?ex=6ad3c1fc&is=6ad2707c&hm=5ccc2893bc5914c30ae5e0a54ac15d6cd03aa5659f4bbc8e6df5aa6b7a333d67&';
@@ -548,7 +548,7 @@ app.get('/login', (req, res) => {
   req.session.oauthState = state;
   const params = new URLSearchParams({
     client_id: CLIENT_ID, redirect_uri: REDIRECT_URI, response_type: 'code',
-    scope: 'identify guilds', state, prompt: 'none',
+    scope: 'identify guilds', state,
   });
   req.session.save(() => res.redirect(`https://discord.com/oauth2/authorize?${params}`));
 });
