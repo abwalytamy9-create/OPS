@@ -40,7 +40,7 @@ const CONFIG = {
   CLIENT_ID: '1553099566239318086',      // Application ID  (OAuth2) — مو سر
   CLIENT_SECRET: '',                     // ← لا تكتبه هون: DISCORD_CLIENT_SECRET بملف .env
   BOT_TOKEN: '',                         // ← لا تكتبه هون: DISCORD_BOT_TOKEN بملف .env
-  REDIRECT_URI: 'http://localhost:3000/auth/discord/callback', // لازم يطابق Redirects في Portal
+  REDIRECT_URI: 'https://ops-system-dashboard.up.railway.app/auth/discord/callback', // لازم يطابق Redirects في Portal
   SUPPORT_URL: 'https://discord.gg/wVwjHms4y', // رابط سيرفر الدعم / تذاكر الشراء
   OWNER_IDS: ['1391956716853264414'],    // ايديات حسابات ديسكورد اللي بتقدر تفعّل البريميوم وتدير مكتبة الصور
   TIMEZONE: 'Asia/Amman',                // توقيت حساب اليومي/الأسبوعي
@@ -49,7 +49,7 @@ const CONFIG = {
   DB_FILE: 'ops-data.json',              // ملف حفظ الإحصائيات (بيتولد لحاله)
   SESSION_SECRET: '',                    // فاضي = يتولد تلقائياً (الجلسات تنمسح عند إعادة التشغيل)
   PORT: 3000,
-  PRODUCTION: false,                     // true لما ترفع الموقع على دومين HTTPS
+  PRODUCTION: true,
 };
 // =======================================================================
 
