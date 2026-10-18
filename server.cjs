@@ -11,22 +11,7 @@
 //     DISCORD_BOT_TOKEN=xxxxxxxx
 //     SESSION_SECRET=اي_نص_طويل_عشوائي      (اختياري)
 // أو بمتغيرات البيئة. وتأكد إن .env مو مرفوع على GitHub.
-// ===== كود نسخ الملف للـ Volume بدون تكرار التعريفات =====
-try {
-  const dataDir = process.env.DATA_DIR || './';
-  const volumeFilePath = path.join(dataDir, 'ops-data.json');
-  const localGithubFilePath = path.join(__dirname, 'ops-data.json');
 
-  if (!fs.existsSync(volumeFilePath) && fs.existsSync(localGithubFilePath)) {
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
-    fs.copyFileSync(localGithubFilePath, volumeFilePath);
-    console.log('✅ تم نسخ ops-data.json من GitHub إلى الـ Volume بنجاح!');
-  }
-} catch (err) {
-  console.error('❌ خطوة نقل الملف للـ Volume فشلت:', err);
-}
 const express = require('express');
 const session = require('express-session');
 const crypto = require('crypto');
@@ -35,7 +20,6 @@ const path = require('path');
 const { Client, GatewayIntentBits, Events, Routes, PermissionFlagsBits, EmbedBuilder, ChannelType, Partials, AuditLogEvent,
   ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, UserSelectMenuBuilder } = require('discord.js');
 
-const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || __dirname;
 // تحميل ملف .env (بدون مكتبات إضافية)
 try {
   for (const line of fs.readFileSync(path.join(__dirname, '.env'), 'utf8').split(/\r?\n/)) {
@@ -50,13 +34,13 @@ const BOT_PERM_NAMES = [
   'ViewChannel', 'SendMessages', 'EmbedLinks', 'AttachFiles', 'ReadMessageHistory', 'UseExternalEmojis',
   'ManageMessages', 'ManageGuild', 'KickMembers', 'BanMembers', 'ModerateMembers', 'ManageNicknames',
   'ManageRoles', 'ManageChannels', 'ManageGuildExpressions', 'ManageEmojisAndStickers',
-  'MoveMembers', 'MuteMembers', 'ChangeNickname', 'Connect', 'Speak', 'ViewAuditLog',
+  'MoveMembers', 'MuteMembers', 'ChangeNickname', 'Connect', 'Speak', 'ViewAuditLog', 'ManageWebhooks',
 ];
 const CONFIG = {
   CLIENT_ID: '1553099566239318086',      // Application ID  (OAuth2) — مو سر
   CLIENT_SECRET: '',                     // ← لا تكتبه هون: DISCORD_CLIENT_SECRET بملف .env
   BOT_TOKEN: '',                         // ← لا تكتبه هون: DISCORD_BOT_TOKEN بملف .env
-  REDIRECT_URI: 'https://ops-system-dashboard.up.railway.app/auth/discord/callback', // لازم يطابق Redirects في Portal
+  REDIRECT_URI: 'http://localhost:3000/auth/discord/callback', // لازم يطابق Redirects في Portal
   SUPPORT_URL: 'https://discord.gg/wVwjHms4y', // رابط سيرفر الدعم / تذاكر الشراء
   OWNER_IDS: ['1391956716853264414'],    // ايديات حسابات ديسكورد اللي بتقدر تفعّل البريميوم وتدير مكتبة الصور
   TIMEZONE: 'Asia/Amman',                // توقيت حساب اليومي/الأسبوعي
@@ -82,10 +66,11 @@ const SESSION_SECRET =
   process.env.SESSION_SECRET || CONFIG.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const isProd = process.env.NODE_ENV === 'production' || CONFIG.PRODUCTION;
 const DISCORD_API = 'https://discord.com/api/v10';
-
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'storage');
+fs.mkdirSync(DATA_DIR, { recursive: true });
 // ===== روابط الصور (غيّرها هون كل ما تنتهي صلاحيتها) =====
-const BG_URL = 'https://cdn.discordapp.com/attachments/1553738433506189414/1560725064725438524/00ddcbc2c5a70d1c.png?ex=6ad3c1fc&is=6ad2707c&hm=5ccc2893bc5914c30ae5e0a54ac15d6cd03aa5659f4bbc8e6df5aa6b7a333d67&';
-const LOGO_URL = 'https://cdn.discordapp.com/attachments/1553738433506189414/1560725103849898024/Gemini_Generated_Image_cfloegcfloegcflo.png?ex=6ad3c205&is=6ad27085&hm=910f08b4b759aabbbb91b87a2cf0980efef84310097b3fe66307c08c1e3c88af&';
+const BG_URL = 'https://cdn.phototourl.com/member/2026-10-18-d2829827-b34e-4802-a30c-e0765b1e37b1.png';
+const LOGO_URL = 'https://cdn.phototourl.com/member/2026-10-18-38b595d3-aa48-496c-a956-d6ba8f8be4a6.png';
 
 if (!/^\d{15,25}$/.test(String(CLIENT_ID))) {
   console.error('CONFIG.CLIENT_ID غير صحيح: ضع Application ID (أرقام فقط).');
@@ -102,7 +87,6 @@ const INVITE_URL =
 
 // =====================  التخزين (ملف JSON)  =====================
 const DB_PATH = path.resolve(DATA_DIR, CONFIG.DB_FILE);
-console.log('DB path:', DB_PATH, '| exists:', fs.existsSync(DB_PATH));
 let db = { guilds: {}, premium: {}, settings: {} };
 try {
   db = Object.assign(db, JSON.parse(fs.readFileSync(DB_PATH, 'utf8')));
@@ -290,16 +274,19 @@ function startBot(withMembers = true) {
 
   const intents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildInvites];
   if (withMembers) intents.push(GatewayIntentBits.GuildMembers, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildPresences);
-  intents.push(GatewayIntentBits.GuildModeration, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.GuildExpressions || GatewayIntentBits.GuildEmojisAndStickers);
+  intents.push(GatewayIntentBits.GuildWebhooks, GatewayIntentBits.GuildModeration, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.GuildExpressions || GatewayIntentBits.GuildEmojisAndStickers);
   client = new Client({ intents, partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User] });
   attachLogs(client);
   attachGuard(client);
+    attachGenProt(client);
 
     client.once(Events.ClientReady, (c) => {
     botReady = true;
+        console.log('[emoji-check]', ['1561146785244647457','1561137631226761238','1561138316785623042','1561138833091989505','1561139734993178635','1561140231581995099','1561140861117399194','1561141648979796011','1561142611425890397','1561143201165738120','1561143717950390427','1561144118711689286','1561144785551495209','1561144796184191088','1561145245641478165'].map((id) => id + ':' + (client.emojis.cache.has(id) ? 'OK' : 'MISSING')).join('\n'));
     console.log(`Bot online: ${c.user.tag} (${c.guilds.cache.size} سيرفر)`);
         console.log('GuildMembers intent مفعّل بالكود:', client.options.intents.has(GatewayIntentBits.GuildMembers));
     tvSweep().catch(() => {});   // ← هون
+        gvSweep().catch(() => {});
     muteSweep().catch(() => {});
         prisonSweep().catch(() => {});
     setInterval(() => prisonSweep().catch(() => {}), 30000);
@@ -336,6 +323,7 @@ function startBot(withMembers = true) {
     if (botReady && guild.joinedTimestamp && Date.now() - guild.joinedTimestamp < 60000) sendBotWelcome(guild).catch(() => {});
   });
   client.on(Events.MessageCreate, onGuard);
+    client.on(Events.MessageCreate, onAutoProt);
   client.on(Events.MessageCreate, onMessage);
   client.on(Events.MessageCreate, onCommand);
     client.on(Events.MessageCreate, onEconomy);
@@ -343,7 +331,9 @@ function startBot(withMembers = true) {
     client.on(Events.InteractionCreate, onDetlogInteraction);
   client.on(Events.MessageCreate, onPrivateGuard);
     client.on(Events.InteractionCreate, onStatsInteraction);
+        client.on(Events.InteractionCreate, onProfileInteraction);
   client.on(Events.InteractionCreate, onHelpInteraction);
+    client.on(Events.InteractionCreate, onClearInteraction);
   client.on(Events.MessageCreate, onImageScan);
   client.on(Events.MessageCreate, onAutoReply);
   client.on(Events.MessageCreate, onChannelSync);
@@ -353,8 +343,12 @@ function startBot(withMembers = true) {
   client.on(Events.InteractionCreate, onEmbedInteraction);
   client.on(Events.InteractionCreate, onTempVoiceInteraction);
 client.on(Events.VoiceStateUpdate, onTempVoice);
+  client.on(Events.VoiceStateUpdate, onGameVoice);
+  client.on(Events.InteractionCreate, onGameVoiceInteraction);
     client.on(Events.InteractionCreate, onRolePanelInteraction);
       client.on(Events.InteractionCreate, onTicketInteraction);
+            client.on(Events.MessageCreate, onTicketShortcut);
+      client.on(Events.InteractionCreate, onApplyInteraction);
         client.on(Events.InteractionCreate, onPenaltyInteraction);
           client.on(Events.InteractionCreate, onInfractionInteraction);
   client.on(Events.ChannelDelete, (ch) => {   // لو انحذفت غرفة تذكرة يدوياً ننظف سجلها
@@ -564,7 +558,7 @@ app.get('/login', (req, res) => {
   req.session.oauthState = state;
   const params = new URLSearchParams({
     client_id: CLIENT_ID, redirect_uri: REDIRECT_URI, response_type: 'code',
-    scope: 'identify guilds', state,
+    scope: 'identify guilds', state, prompt: 'none',
   });
   req.session.save(() => res.redirect(`https://discord.com/oauth2/authorize?${params}`));
 });
@@ -804,10 +798,15 @@ app.get('/api/leaders', auth, wrap(async (req, res) => {
 
 app.get('/api/subscriptions', auth, wrap(async (req, res) => {
   const shared = await sharedGuilds(req);
+  const now = Date.now();
   const out = [];
   for (const g of shared) {
     const p = db.premium[g.id];
-    if (p && p.history && p.history.length) out.push({ id: g.id, name: g.name, icon: g.icon, active: p.until > Date.now(), until: p.until, history: p.history });
+    if (!(p && p.history && p.history.length)) continue;
+    let status;
+    if (p.until > now) status = p.until - now <= 3 * 864e5 ? 'soon' : 'active';
+    else status = p.cancelled ? 'cancelled' : 'expired';
+    out.push({ id: g.id, name: g.name, icon: g.icon, status, active: p.until > now, until: p.until, history: p.history });
   }
   res.json(out);
 }));
@@ -821,44 +820,72 @@ app.get('/api/admin/premium', auth, (req, res) => {
   const p = db.premium[gid] || (db.premium[gid] = { until: 0, history: [] });
   if (req.query.revoke) {
     p.until = 0;
+    p.cancelled = true;
   } else {
     const days = parseInt(req.query.days, 10);
     if (!(days > 0 && days <= 3650)) return res.status(400).json({ error: 'bad_days' });
     p.until = Math.max(now, p.until) + days * 864e5;
+        p.cancelled = false;
     p.history.push({ start: now, end: p.until, days, by: req.session.user.id });
   }
   dirty = true;
   res.json({ ok: true, guild: gid, until: p.until });
-});// ===== استرجاع ملف البيانات (مؤقت - احذفه بعد الاستخدام) =====
-app.get('/restore', (req, res) => {
-  if (!req.session.user || !OWNER_IDS.includes(req.session.user.id)) return res.status(403).send('forbidden');
-  res.type('html').send(`<!doctype html><meta charset="utf-8"><title>Restore</title>
-<body style="font-family:sans-serif;background:#111;color:#fff;padding:40px;direction:rtl">
-<h2>استرجاع ops-data.json</h2>
-<input type="file" id="f" accept=".json">
-<button id="b">رفع</button>
-<pre id="o"></pre>
-<script>
-document.getElementById('b').onclick = async () => {
-  const f = document.getElementById('f').files[0];
-  if (!f) return;
-  const text = await f.text();
-  const r = await fetch('/api/admin/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: text }) });
-  document.getElementById('o').textContent = await r.text();
-};
-</script></body>`);
+});// ===================== آخر التحديثات =====================
+const UPD_DIR = path.resolve(DATA_DIR, 'ops-updates');
+const updList = () => (db.updates = Array.isArray(db.updates) ? db.updates : []);
+const isOwnerReq = (req) => OWNER_IDS.includes(req.session.user.id);
+
+app.get('/api/updates', auth, (req, res) => {
+  res.json({
+    isOwner: isOwnerReq(req),
+    list: updList().slice().sort((a, b) => b.at - a.at).slice(0, 100),
+  });
 });
 
-app.post('/api/admin/restore', (req, res) => {
-  if (!req.session.user || !OWNER_IDS.includes(req.session.user.id)) return res.status(403).json({ error: 'forbidden' });
-  let parsed;
-  try { parsed = JSON.parse(String((req.body || {}).data || '')); } catch (_) { return res.status(400).json({ error: 'bad_json' }); }
-  if (!parsed || typeof parsed !== 'object' || !parsed.guilds) return res.status(400).json({ error: 'not_ops_data' });
-  try { fs.copyFileSync(DB_PATH, DB_PATH + '.before-restore'); } catch (_) {}
-  db = Object.assign({ guilds: {}, premium: {}, settings: {} }, parsed);
+app.post('/api/updates', auth, (req, res) => {
+  if (!isOwnerReq(req)) return res.status(403).json({ error: 'forbidden' });
+  const b = req.body || {};
+  const text = String(b.text == null ? '' : b.text).trim();
+  const imgs = Array.isArray(b.images) ? b.images : [];
+  if (!text && !imgs.length) return res.status(400).json({ error: 'empty_update' });
+  if (text.length > 4000 || imgs.length > 4) return res.status(400).json({ error: 'bad_value' });
+  const parsed = [];
+  for (const v of imgs) {
+    const ok = imgCheck(v, 3);
+    if (ok !== true || v === null) return res.status(400).json({ error: ok === true ? 'bad_image' : ok });
+    parsed.push(/^data:image\/(png|jpeg|gif|webp);base64,(.+)$/.exec(v));
+  }
+  const names = [];
+  try {
+    fs.mkdirSync(UPD_DIR, { recursive: true });
+    for (const m of parsed) {
+      const name = crypto.randomBytes(6).toString('hex') + '.' + BG_EXT[m[1]];
+      fs.writeFileSync(path.join(UPD_DIR, name), Buffer.from(m[2], 'base64'));
+      names.push(name);
+    }
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'server_error' }); }
+  updList().push({ id: crypto.randomBytes(5).toString('hex'), text, images: names, at: Date.now(), by: req.session.user.id });
   dirty = true;
-  save();
-  res.json({ ok: true, guilds: Object.keys(db.guilds).length, premium: Object.keys(db.premium).length });
+  res.json({ ok: true });
+});
+
+app.delete('/api/updates/:id', auth, (req, res) => {
+  if (!isOwnerReq(req)) return res.status(403).json({ error: 'forbidden' });
+  const l = updList();
+  const i = l.findIndex((u) => u.id === req.params.id);
+  if (i < 0) return res.status(404).json({ error: 'not_found' });
+  const [u] = l.splice(i, 1);
+  for (const n of u.images || []) { try { fs.unlinkSync(path.join(UPD_DIR, n)); } catch (_) {} }
+  dirty = true;
+  res.json({ ok: true });
+});
+
+app.get('/api/updates/img/:name', auth, (req, res) => {
+  if (!/^[a-f0-9]{12}\.(png|jpg|gif|webp)$/.test(req.params.name)) return res.status(404).end();
+  const f = path.join(UPD_DIR, req.params.name);
+  if (!fs.existsSync(f)) return res.status(404).end();
+  res.set({ 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
+  res.sendFile(f);
 });
 // ===== شراء البريميوم بعملة OPS =====
 const PREMIUM_COIN_PRICE = 200000;          // السعر
@@ -1012,6 +1039,11 @@ function textChannels(gid) {
 // =====================  اللوقات + الترحيب والمغادرة  =====================
 let canvasLib = null;
 try { canvasLib = require('@napi-rs/canvas'); } catch (_) { /* اختياري: npm i @napi-rs/canvas لتوليد صورة الترحيب */ }
+try {
+  const ff = path.join(__dirname, 'Cairo-Bold.ttf');
+  if (canvasLib && fs.existsSync(ff)) { canvasLib.GlobalFonts.registerFromPath(ff, 'Cairo'); console.log('[font] Cairo loaded'); }
+  else console.warn('[font] Cairo-Bold.ttf مو موجود بجانب ops-coin.js');
+} catch (e) { console.error('[font]', e.message); }
 const WEL_DIR = path.resolve(DATA_DIR, 'ops-welcome');
 const BG_EXT = { png: 'png', jpeg: 'jpg', gif: 'gif', webp: 'webp' };
 
@@ -1115,11 +1147,13 @@ function L(guild, key, title, desc, o = {}) {
     const gi = guild.iconURL({ size: 64 }) || undefined;
     const au = o.author || null, ex = o.exec || null;
     const e = new EmbedBuilder()
-      .setColor(parseInt(t.c.color.slice(1), 16))
+      .setColor(0x2b2d31)   // نفس لون خلفية الإيمبد = الشريط ما بيبين
       .setAuthor(au ? { name: au.globalName || au.username, iconURL: au.displayAvatarURL({ size: 64 }) } : { name: guild.name, iconURL: gi })
       .setDescription((`**${title}**` + (desc ? `\n\n${desc}` : '')).slice(0, 3900))
       .setFooter(ex ? { text: ex.username, iconURL: ex.displayAvatarURL({ size: 64 }) } : { text: guild.name, iconURL: gi })
       .setTimestamp();
+    if (o.thumb) e.setThumbnail(o.thumb);
+    if (o.fields && o.fields.length) e.addFields(o.fields.slice(0, 10));
     t.ch.send({ embeds: [e], allowedMentions: { parse: [] } }).catch(() => {});
   } catch (_) { /* اللوق ما لازم يكسر البوت */ }
 }
@@ -1146,10 +1180,15 @@ function execOf(guild, type, targetId) {
   setTimeout(() => auditCache.delete(k), 2500);
   return p;
 }
-async function LX(guild, key, title, desc, type, targetId) {
+async function LX(guild, key, title, desc, type, targetId, o2) {
   try {
     if (!logTarget(guild, key)) return;
     const e = await execOf(guild, type, targetId);
+    if (o2 && o2.fields) {
+      const f = [...o2.fields];
+      if (e && e.user) f.unshift({ name: 'المشرف المسؤول', value: `<@${e.user.id}>`, inline: true });
+      return L(guild, key, title, desc || '', { exec: e && e.user, fields: f });
+    }
     const extra = e && e.user ? `\n**المشرف المسؤول:**\n<@${e.user.id}>` + (e.reason ? `\n**سبب التنفيذ:** ${cut(e.reason, 200)}` : '') : '';
     L(guild, key, title, (desc || '') + extra, { exec: e && e.user });
   } catch (_) {}
@@ -1248,7 +1287,12 @@ function attachLogs(client) {
   on(Events.ChannelDelete, (c) => c.guild && LX(c.guild, 'channels', `🏘️ تم إزالة روم: \`${c.name}\``, '', AuditLogEvent.ChannelDelete, c.id));
   on(Events.ChannelUpdate, (o, n) => {
     if (!n.guild) return;
-    if (o.name !== n.name) LX(n.guild, 'channels', `🏘️ تم تغيير اسم روم: <#${n.id}>`, `**قبل:** \`${o.name}\`\n**بعد:** \`${n.name}\``, AuditLogEvent.ChannelUpdate, n.id);
+    if (o.name !== n.name) LX(n.guild, 'channels', `🏘️ تم تحديث روم: \`${n.name}\``, '', AuditLogEvent.ChannelUpdate, n.id, {
+      fields: [
+        { name: 'الاسم الجديد', value: n.name, inline: true },
+        { name: 'الاسم القديم', value: o.name, inline: true },
+      ],
+    });
     const pd = permDiff(o, n);
     if (pd.length) LX(n.guild, 'channels', `🏘️ تم تحديث صلاحيات روم: \`${n.name}\``, '**Permissions:**\n' + pd.join('\n'), AuditLogEvent.ChannelOverwriteUpdate, n.id);
   });
@@ -1321,7 +1365,7 @@ function attachLogs(client) {
       }).catch(() => {});
     }
     if (m.user.bot) return;
-    L(m.guild, 'joinleave', '📤 خروج عضو', `**العضو:** ${who(m.user)}`);
+    L(m.guild, 'joinleave', `غادر <@${m.user.id}>`, '', { author: m.user, thumb: m.user.displayAvatarURL({ size: 256 }) });
     return memberLeave(m);
   });
 
@@ -1557,6 +1601,51 @@ async function onAutoReply(msg) {
 }
 
 // ---------- الإيمبد ----------
+const EMBIMG_DIR = path.resolve(DATA_DIR, 'ops-embimgs');
+const EMB_UP = /^up:[a-f0-9]{10}\.(?:png|jpg|gif|webp)$/;
+app.post('/api/guild/:id/embimg', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res, { manage: true }); if (!info) return;
+  const v = (req.body || {}).image;
+  const ok = imgCheck(v, 8);
+  if (ok !== true || v === null) return res.status(400).json({ error: ok === true ? 'bad_image' : ok });
+  const m = /^data:image\/(png|jpeg|gif|webp);base64,(.+)$/.exec(v);
+  if (!m) return res.status(400).json({ error: 'bad_image' });
+  const name = crypto.randomBytes(5).toString('hex') + '.' + BG_EXT[m[1]];
+  try {
+    fs.mkdirSync(path.join(EMBIMG_DIR, info.id), { recursive: true });
+    fs.writeFileSync(path.join(EMBIMG_DIR, info.id, name), Buffer.from(m[2], 'base64'));
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'server_error' }); }
+  res.json({ ok: true, ref: 'up:' + name });
+}));
+app.get('/api/guild/:id/embimg', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res); if (!info) return;
+  const dir = path.join(EMBIMG_DIR, info.id);
+  let list = [];
+  try {
+    list = fs.readdirSync(dir).filter((n) => /^[a-f0-9]{10}\.(png|jpg|gif|webp)$/.test(n))
+      .map((n) => ({ n, t: fs.statSync(path.join(dir, n)).mtimeMs })).sort((a, b) => b.t - a.t).map((x) => 'up:' + x.n);
+  } catch (_) {}
+  res.json({ list });
+}));
+app.get('/api/guild/:id/embimg/:name', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res); if (!info) return;
+  if (!/^[a-f0-9]{10}\.(png|jpg|gif|webp)$/.test(req.params.name)) return res.status(404).end();
+  const f = path.join(EMBIMG_DIR, info.id, req.params.name);
+  if (!fs.existsSync(f)) return res.status(404).end();
+  res.set({ 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
+  res.sendFile(f);
+}));
+// يحوّل up:xxx إلى attachment://xxx ويرفق الملفات
+function embUpload(gid, body) {
+  const files = [];
+  const s = JSON.stringify(body).replace(/"up:([a-f0-9]{10}\.(?:png|jpg|gif|webp))"/g, (x, n) => {
+    try {
+      if (!files.some((f) => f.name === n)) files.push({ name: n, data: fs.readFileSync(path.join(EMBIMG_DIR, gid, n)) });
+      return `"attachment://${n}"`;
+    } catch (_) { return '""'; }
+  });
+  return { body: JSON.parse(s), files };
+}
 function embCore(d) {
   const e = {};
   const c = parseInt(String(d.color || '').slice(1), 16);
@@ -1587,12 +1676,62 @@ const EMB_STYLE = { primary: 1, secondary: 2, success: 3, danger: 4 };
 const embLimits = (gid) => { const p = isPremium(gid); return { chars: p ? 6000 : 1500, bytes: p ? 10240 : 3584, actions: p ? 25 : 5, count: p ? 50 : 10 }; };
 const embList = (gid) => arr((db.settings[gid] || {}).embeds).filter((e) => e && e.id);
 const EMOJI_RE = /\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]️?⃣/u;
+function blocksClean(list, L, gid) {
+  if (list === undefined) return [];
+  const prem = L.actions > 5;
+  if (!Array.isArray(list) || list.length > (prem ? 30 : 10)) throw codeErr('limit_reached');
+  const s = (v, max) => { const t = v == null ? '' : String(v).trim(); if (t.length > max) throw codeErr('bad_text'); return t; };
+  const url = (v) => { const t = s(v, 500); if (!t) return ''; if (EMB_UP.test(t)) { if (!fs.existsSync(path.join(EMBIMG_DIR, gid, t.slice(3)))) throw codeErr('bad_image'); return t; } const u = safeUrl(t); if (u === null) throw codeErr('bad_url'); return u; };
+  const cg = client && client.guilds.cache.get(gid);
+  const roles = new Set(roleList(gid).map((r) => r.id));
+  const kmax = prem ? 10 : 3;
+  const n = { section: 0, gallery: 0 };
+  return list.map((x) => {
+    x = x || {};
+    if (x.type === 'text') { const content = s(x.content, 4000); if (!content) throw codeErr('bad_block'); return { type: 'text', content }; }
+    if (x.type === 'sep') return { type: 'sep', divider: x.divider !== false, spacing: x.spacing === 2 ? 2 : 1 };
+    if (x.type === 'section') {
+      if (++n.section > kmax) throw codeErr('limit_reached');
+      const lines = (Array.isArray(x.lines) ? x.lines : []).map((t) => s(t, 1000)).filter(Boolean).slice(0, prem ? 3 : 2);
+      if (!lines.length) throw codeErr('bad_block');
+      if (x.accessory === 'button') {
+        const b = x.button || {};
+        const label = s(b.label, 80);
+        const style = b.style === 'link' || has(EMB_STYLE, b.style) ? b.style : 'primary';
+        if (!label) throw codeErr('bad_block');
+        let u = '', roleId = '';
+        if (style === 'link') { u = url(b.url); if (!u) throw codeErr('bad_block'); }
+        else if (b.roleId) {
+          const role = cg && cg.roles.cache.get(String(b.roleId));
+          if (!role || !roles.has(role.id)) throw codeErr('bad_value');
+          if (DANGER_PERMS.some((p) => role.permissions.has(PermissionFlagsBits[p]))) throw codeErr('role_dangerous');
+          roleId = role.id;
+        }
+        return { type: 'section', lines, accessory: 'button', button: { label, style, url: u, reply: style === 'link' ? '' : s(b.reply, 2000), roleId } };
+      }
+      const thumbnail = url(x.thumbnail);
+      if (!thumbnail) throw codeErr('bad_block');
+      return { type: 'section', lines, accessory: 'image', thumbnail };
+    }
+    if (x.type === 'gallery') {
+      if (++n.gallery > kmax) throw codeErr('limit_reached');
+      const items = (Array.isArray(x.items) ? x.items : []).map(url).filter(Boolean).slice(0, kmax);
+      if (!items.length) throw codeErr('bad_block');
+      return { type: 'gallery', items };
+    }
+    throw codeErr('bad_block');
+  });
+}
 
 function embClean(b, gid, id) {
   if (!b || typeof b !== 'object') throw codeErr('bad_value');
   const L = embLimits(gid);
   const s = (v, max) => { const t = v == null ? '' : String(v).trim(); if (t.length > max) throw codeErr('bad_text'); return t; };
-  const url = (v) => { const t = s(v, 500); if (!t) return ''; const u = safeUrl(t); if (u === null) throw codeErr('bad_url'); return u; };
+    const url = (v) => {
+    const t = s(v, 500); if (!t) return '';
+    if (EMB_UP.test(t)) { if (!fs.existsSync(path.join(EMBIMG_DIR, gid, t.slice(3)))) throw codeErr('bad_image'); return t; }
+    const u = safeUrl(t); if (u === null) throw codeErr('bad_url'); return u;
+  };
   const name = s(b.name, 60);
   if (!name) throw codeErr('emb_name');
   const cg = client && client.guilds.cache.get(gid);
@@ -1623,6 +1762,9 @@ function embClean(b, gid, id) {
     image: url(b.image),
     footer: { text: s(ft.text, 2048), icon: url(ft.icon) },
     timestamp: b.timestamp === true,
+        transparent: b.transparent === true,
+    spoiler: b.spoiler === true,
+        blocks: blocksClean(b.blocks, L, gid),
     kind, placeholder: s(b.placeholder, 150),
     actions: kind === 'none' ? [] : (b.actions || []).map((a) => {
       a = a || {};
@@ -1668,6 +1810,29 @@ function embBody(doc) {
   const rows = embComponents(doc);
   const mentions = { parse: [] };
   if (doc.mode === 'v2') {
+            if (doc.blocks && doc.blocks.length) {
+      const tx = (t) => ({ type: 10, content: t });
+      const parts = [];
+      if (doc.content) parts.push(tx(doc.content.slice(0, 2000)));
+      doc.blocks.forEach((b, bi) => {
+        if (b.type === 'text') parts.push(tx(b.content));
+        else if (b.type === 'sep') parts.push({ type: 14, divider: b.divider, spacing: b.spacing });
+        else if (b.type === 'section') {
+          let acc;
+          if (b.accessory === 'button') {
+            const bt = b.button;
+            acc = bt.style === 'link'
+              ? { type: 2, style: 5, label: bt.label.slice(0, 80), url: bt.url }
+              : { type: 2, style: EMB_STYLE[bt.style] || 1, label: bt.label.slice(0, 80), custom_id: `embb:${doc.id}:${bi}` };
+          } else acc = { type: 11, media: { url: b.thumbnail } };
+          parts.push({ type: 9, components: b.lines.map(tx), accessory: acc });
+        } else if (b.type === 'gallery') parts.push({ type: 12, items: b.items.map((u) => ({ media: { url: u } })) });
+      });
+      if (rows.length) parts.push({ type: 14, divider: true, spacing: 1 }, ...rows);
+      const cont = { type: 17, spoiler: !!doc.spoiler, components: parts };
+      if (!doc.transparent) cont.accent_color = parseInt(doc.color.slice(1), 16);
+      return { flags: 1 << 15, components: [cont], allowed_mentions: mentions };
+    }
     const inner = [];
     if (doc.content) inner.push({ type: 10, content: doc.content.slice(0, 2000) });
     const texts = [];
@@ -1700,7 +1865,11 @@ function embBody(doc) {
 const embErr = (res, e) => (e.code ? res.status(400).json({ error: e.code }) : null);
 app.get('/api/guild/:id/embeds', auth, wrap(async (req, res) => {
   const info = await ctxGuild(req, res); if (!info) return;
-  res.json({ canManage: info.canManage, guildPremium: isPremium(info.id), limits: embLimits(info.id), roles: roleList(info.id), channels: textChannels(info.id), embeds: embList(info.id) });
+  const botMe = client.guilds.cache.get(info.id).members.me;
+  res.json({
+    canManage: info.canManage, guildPremium: isPremium(info.id), limits: embLimits(info.id), roles: roleList(info.id), channels: textChannels(info.id), embeds: embList(info.id),
+    bot: { name: botMe ? botMe.displayName : client.user.username, avatar: botMe ? botMe.displayAvatarURL({ size: 64, extension: 'png' }) : client.user.displayAvatarURL({ size: 64, extension: 'png' }) },
+  });
 }));
 app.post('/api/guild/:id/embeds', auth, wrap(async (req, res) => {
   const info = await ctxGuild(req, res, { manage: true }); if (!info) return;
@@ -1718,6 +1887,8 @@ app.put('/api/guild/:id/embeds/:eid', auth, wrap(async (req, res) => {
   if (i < 0) return res.status(404).json({ error: 'not_found' });
   let doc;
   try { doc = embClean((req.body || {}).embed, info.id, list[i].id); } catch (e) { if (embErr(res, e)) return; throw e; }
+    doc.messageId = list[i].messageId || null;
+  doc.msgChannel = list[i].msgChannel || null;
   list[i] = doc;
   S(info.id).embeds = list;
   dirty = true;
@@ -1740,8 +1911,20 @@ app.post('/api/guild/:id/embeds/:eid/send', auth, wrap(async (req, res) => {
   let body;
   try { body = embBody(doc); } catch (e) { if (embErr(res, e)) return; throw e; }
   try {
-    const m = await client.rest.post(Routes.channelMessages(doc.channel), { body });
-    res.json({ ok: true, url: `https://discord.com/channels/${info.id}/${doc.channel}/${m.id}` });
+    const up = embUpload(info.id, body);
+    let m = null, updated = false;
+    if (doc.messageId && doc.msgChannel === doc.channel) {
+      try {
+        const v2 = !!(body.flags & (1 << 15));
+        const pb = { ...(v2 ? {} : { content: '', embeds: [], components: [] }), ...up.body,
+          attachments: up.files.map((f, n) => ({ id: n, filename: f.name })) };
+        m = await client.rest.patch(Routes.channelMessage(doc.channel, doc.messageId), { body: pb, files: up.files });
+        updated = true;
+      } catch (_) { m = null; }
+    }
+    if (!m) m = await client.rest.post(Routes.channelMessages(doc.channel), { body: up.body, files: up.files });
+    doc.messageId = m.id; doc.msgChannel = doc.channel; dirty = true;
+    res.json({ ok: true, updated, messageId: m.id, msgChannel: doc.channel, url: `https://discord.com/channels/${info.id}/${doc.channel}/${m.id}` });
   } catch (e) { res.status(400).json({ error: 'discord_error', detail: discordMsg(e) }); }
 }));
 
@@ -1749,11 +1932,11 @@ async function onEmbedInteraction(i) {
   try {
     const cid = String(i.customId || '');
     const isBtn = i.isButton && i.isButton(), isSel = i.isStringSelectMenu && i.isStringSelectMenu();
-    if (!i.guildId || !(isBtn || isSel) || !(cid.startsWith('emb:') || cid.startsWith('embs:'))) return;
+    if (!i.guildId || !(isBtn || isSel) || !(cid.startsWith('emb:') || cid.startsWith('embs:') || cid.startsWith('embb:'))) return;
     const parts = cid.split(':');
     const idx = Number(isSel ? i.values[0] : parts[2]);
     const doc = embList(i.guildId).find((e) => e.id === parts[1]);
-    const a = doc && doc.actions[idx];
+    const a = doc && (parts[0] === 'embb' ? ((doc.blocks || [])[idx] || {}).button : doc.actions[idx]);
     if (!a) return void (await i.reply({ content: 'هذا الخيار لم يعد متاحاً.', flags: 64 }));
     let note = '';
     if (a.roleId) {
@@ -1987,7 +2170,12 @@ async function memberJoin(m, used, test) {
   if (m.user.bot) { L(g, 'bots', '🤖 إضافة بوت', `**البوت:** ${who(m.user)}`); console.log('[welcome] بوت، تخطيت'); return; }
   const inviter = used && used.inviter ? used.inviter : (test ? m.user : null); // بالتجربة يعتبرك انت الداعي عشان تشوف الشكل
   const invCount = inviter ? ((((db.guilds[g.id] || {}).members || {})[inviter.id] || {}).inv || 0) : 0;
-  if (!test) L(g, 'joinleave', '📥 دخول عضو', `**العضو:** ${who(m.user)}\n**الداعي:** ${inviter ? who(inviter) : 'غير معروف'}\n**عدد الأعضاء:** ${g.memberCount}`);
+  if (!test) {
+    const cts = Math.floor(m.user.createdTimestamp / 1000);
+    L(g, 'joinleave', `انضم <@${m.id}> إلى السيرفر.`,
+      `**عمر الحساب:**\n<t:${cts}:f>\n**<t:${cts}:R>**\n\n**الداعي:** ${inviter ? `<@${inviter.id}>` : 'غير معروف'}`,
+      { author: m.user, thumb: m.user.displayAvatarURL({ size: 256 }) });
+  }
 
   const cfg = welCfg(g.id);
   console.log(`[welcome] enabled=${cfg.enabled} join.enabled=${cfg.join.enabled} mode=${cfg.join.mode} channel=${cfg.join.channel} image=${cfg.image.enabled}`);
@@ -2061,7 +2249,7 @@ const WRAP = {
   kick: ['kick', '👢 طرد عضو', 1], mute: ['textmute', '🔇 ميوت كتابي'], unmute: ['textmute', '🔊 فك ميوت كتابي'],
   prison: ['prison', '⛓️ سجن عضو', 1], unprison: ['prison', '🔓 فك سجن'], warn: ['warns', '⚠️ تحذير إداري', 1],
   vkick: ['voicekick', '🔌 طرد صوتي'], rblock: ['rblock', '🚫 حظر رتبة'], removeblock: ['rblock', '✅ فك حظر رتبة'],
-  clear: ['purge', '🧹 حذف رسائل جماعي'], move: ['voicepull', '↔️ سحب صوتي'], moveme: ['voicepull', '↔️ انتقال صوتي'],
+  clear: ['purge', 'حذف رسائل جماعي'], move: ['voicepull', '↔️ سحب صوتي'], moveme: ['voicepull', '↔️ انتقال صوتي'],
   moveto: ['voicepull', '↔️ نقل صوتي'], moveall: ['voicepull', '↔️ نقل جماعي صوتي'],
 };
 for (const [name, [key, title, withReason]] of Object.entries(WRAP)) {
@@ -2078,7 +2266,7 @@ for (const [name, [key, title, withReason]] of Object.entries(WRAP)) {
       lines.push(`**الأمر:** \`${name}!\``, `**الروم:** <#${msg.channelId}>`);
       if (name === 'clear') lines.push(`**العدد:** ${cut(a[0], 10)}`);
       if (withReason && a.slice(1).length) lines.push(`**السبب:** ${cut(a.slice(1).join(' '), 300)}`);
-      L(msg.guild, key, title, lines.join('\n'));
+      L(msg.guild, key, name === 'clear' ? `${cmdEmojis().clearlog || ''} ${title}`.trim() : title, lines.join('\n'));
     } catch (_) {}
   };
 }
@@ -2273,7 +2461,7 @@ const CMD_RAW = {
     ['unprison', 'فك سجن عضو', 'ModerateMembers', 0],
     ['vkick', 'طرد عضو من الروم الصوتي', 'MoveMembers', 0],
     ['setnick', 'تغيير اسم عضو داخل السيرفر', 'ManageNicknames', 0],
-    ['clear', 'مسح رسائل الشات (من 1 إلى 1000)', 'ManageMessages', 1],
+    ['clear', 'مسح رسائل الشات (من 1 إلى 1000 أو all)', 'ManageMessages', 1],
     ['move', 'سحب عضو إلى الروم الخاص بك', 'MoveMembers', 0],
     ['moveme', 'انتقال إلى الروم الخاص بعضو آخر', 'MoveMembers', 0],
     ['moveto', 'سحب عضو أو نفسك إلى روم محدد', 'MoveMembers', 0],
@@ -2434,7 +2622,55 @@ app.put('/api/guild/:id/commands', auth, wrap(async (req, res) => {
 }));
 
 // ---------- تنفيذ الأوامر ----------
-const say = (msg, text) => msg.reply({ content: String(text).slice(0, 1900), allowedMentions: { parse: [], repliedUser: false } }).catch(() => {});
+// ---- إيموجيات ردود البوت (عامة، المالك يغيرها) ----
+const CMD_EMO_ITEMS = [
+  ['ok', 'نجاح / تم', '✅'],
+  ['warn', 'تحذير / خطأ', '⚠️'],
+  ['no', 'رفض / ممنوع', '❌'],
+  ['mute', 'ميوت كتابي', '🤐'],
+  ['vmute', 'ميوت صوتي', '🔇'],
+  ['unvmute', 'فك ميوت صوتي', '🔊'],
+  ['mic', 'معلومات الصوت', '🎙️'],
+  ['prison', 'السجن', '⛓️'],
+  ['ban', 'الحظر', '🔨'],
+  ['timeout', 'التايم أوت', '⏳'],
+  ['kick', 'الطرد', '👢'],
+  ['role_add', 'إضافة (رتبة / عضو)', '➕'],
+  ['role_remove', 'سحب (رتبة / عضو)', '➖'],
+  ['clean', 'سحب كل الرتب', '🧹'],
+  ['rblock', 'حظر رتبة', '🚫'],
+  ['ping', 'بينج', '🏓'],
+  ['shield', 'حماية الصور', '🛡️'],
+  ['trash', 'حذف', '🗑️'],
+  ['soon', 'قيد التجهيز', '🚧'],
+  ['lock', 'قفل', '🔒'],
+  ['unlock', 'فتح', '🔓'],
+  ['claim', 'استلام تذكرة', '🙋'],
+  ['come', 'استدعاء', '📢'],
+    ['gift', 'مكافأة يومية عادية', '🎁'],
+  ['vipgift', 'مكافأة العضوية المميزة (أعلى الرسالة)', '🎁'],
+    ['clearwarn', 'تأكيد المسح الشامل', '⚠️'],
+      ['clearlog', 'لوق: حذف رسائل جماعي', '🧹'],
+];
+function cmdEmojis() {
+  const src = db.cmdEmojis && typeof db.cmdEmojis === 'object' ? db.cmdEmojis : {};
+  const o = {};
+  for (const [k, , def] of CMD_EMO_ITEMS) o[k] = has(src, k) && (src[k] === '' || TK_EMO_OK(src[k])) ? src[k] : def;
+  return o;
+}
+function applyEmo(text) {
+  const cur = cmdEmojis();
+  const map = new Map(CMD_EMO_ITEMS.filter(([k]) => k !== 'gift' && k !== 'vipgift' && k !== 'clearwarn' && k !== 'clearlog').map(([k, , def]) => [def, cur[k]]));
+  const re = new RegExp([...map.keys()].sort((a, b) => b.length - a.length)
+    .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g');
+  return String(text).replace(re, (m) => map.get(m));
+}
+const v2Comps = (t) => [{ type: 17, components: [{ type: 10, content: applyEmo(t).slice(0, 4000) }] }];
+const say = (msg, text) => client.rest.post(Routes.channelMessages(msg.channelId), { body: {
+  flags: 1 << 15, allowed_mentions: { parse: [] },
+  message_reference: { message_id: msg.id, fail_if_not_exists: false },
+  components: v2Comps(text),
+} }).catch(() => null);
 const EMB = () => new EmbedBuilder().setColor(0xfbbf24);
 const card = (msg, e) => msg.reply({ embeds: [e], allowedMentions: { parse: [], repliedUser: false } }).catch(() => {});
 const ts = (ms, f = 'F') => `<t:${Math.floor(ms / 1000)}:${f}>`;
@@ -2519,7 +2755,7 @@ const CMD_USAGE = {
   vmute: ['[user]', ['{u}']],
   unvmute: ['[user]', ['{u}']],
   setnick: ['[user] [nick]', ['{u} الاسم_الجديد']],
-  clear: ['[count]', ['10', '100']],
+  clear: ['[count | all]', ['10', '100', 'all']],
   warn: ['[user] (reason)', ['{u} spam']],
   warnings: ['(user)', ['{u}']],
   role: ['[user] [role]', ['{u} @role']],
@@ -3107,25 +3343,31 @@ const HANDLERS = {
   },
   // يمسح من 1 إلى 1000 رسالة (البوت يمسح على دفعات 100). ديسكورد ما بيسمح بمسح رسائل أقدم من 14 يوم.
   async clear(msg, mod, a) {
-    const n = parseInt(a[0], 10);
-    need(n >= 1 && n <= 1000, 'الاستخدام: clear! 100  (من 1 إلى 1000)');
+    const isAll = ['all', 'كل', 'كامل'].includes(String(a[0] || '').toLowerCase());
+    const n = isAll ? 0 : parseInt(a[0], 10);
+    need(isAll || (n >= 1 && n <= 1000), 'الاستخدام: clear! 100  (من 1 إلى 1000)  أو  clear! all');
     const ch = msg.channel;
     need(ch.bulkDelete && ch.messages, 'ما أقدر أمسح بهذا الروم.');
-    await msg.delete().catch(() => {});
-    const limit = Date.now() - 14 * 864e5 + 60000;
-    let left = n, deleted = 0, before, old = false;
-    while (left > 0 && !old) {
-      const batch = await ch.messages.fetch({ limit: Math.min(100, left), before });
-      if (!batch.size) break;
-      before = batch.last().id;
-      left -= batch.size;
-      const fresh = batch.filter((m) => m.createdTimestamp > limit && !m.pinned);
-      if (batch.some((m) => m.createdTimestamp <= limit)) old = true;
-      if (fresh.size) deleted += (await ch.bulkDelete(fresh, true)).size;
-      if (batch.size < 100 && left > 0) break;
+    if (isAll) {
+      const sep = { type: 14, divider: true, spacing: 1 };
+      await client.rest.post(Routes.channelMessages(ch.id), { body: {
+        flags: 1 << 15, allowed_mentions: { parse: [] },
+        message_reference: { message_id: msg.id, fail_if_not_exists: false },
+        components: [{ type: 17, components: [
+          { type: 10, content: '## تأكيد عملية المسح الشامل ' + (cmdEmojis().clearwarn || '') },
+          sep,
+          { type: 10, content: 'سيتم حذف جميع الرسائل التي يقل عمرها عن 14 يوماً.' },
+          sep,
+          { type: 1, components: [
+            { type: 2, style: 3, custom_id: `clr:y:${mod.id}`, label: 'تأكيد' },
+            { type: 2, style: 2, custom_id: `clr:n:${mod.id}`, label: 'إلغاء' },
+          ] },
+        ] }],
+      } });
+      return;
     }
-        const note = await ch.send(`✅ تم مسح ${NF(deleted)} رسالة.` + (old ? ' (الرسائل الأقدم من 14 يوم ما بتنمسح)' : '')).catch(() => null);
-    if (note) setTimeout(() => note.delete().catch(() => {}), 5000);
+    await msg.delete().catch(() => {});
+    await clearDone(ch, await clearMessages(ch, n));
   },
   async setnick(msg, mod, a) {
     const m = await targetMember(msg, a);
@@ -3414,8 +3656,8 @@ const HANDLERS = {
   },
   async ping(msg) {
     const t = Date.now();
-    const m = await msg.reply({ content: '🏓 ...', allowedMentions: { parse: [], repliedUser: false } }).catch(() => null);
-    if (m) m.edit(`🏓 Pong!  WebSocket: ${Math.round(client.ws.ping)}ms  |  الرد: ${Date.now() - t}ms`).catch(() => {});
+    const m = await say(msg, '🏓 ...');
+    if (m) client.rest.patch(Routes.channelMessage(msg.channelId, m.id), { body: { flags: 1 << 15, components: v2Comps(`🏓 Pong!  WebSocket: ${Math.round(client.ws.ping)}ms  |  الرد: ${Date.now() - t}ms`) } }).catch(() => {});
   },
   async semoji(msg, mod, a) {
     const text = a.join(' ');
@@ -3769,8 +4011,110 @@ const linkRow = (label, url) => [{ type: 1, components: [{ type: 2, style: 5, la
 const NOPING = { parse: [], repliedUser: false };
 
 // ---------- بطاقة المستوى (level) ----------
+let lvlLogoImg = null;
+async function levelLogo() {
+  if (lvlLogoImg) return lvlLogoImg;
+  const local = path.join(__dirname, 'level-logo.png');
+  const img = await loadImg(fs.existsSync(local) ? local : 'https://cdn.discordapp.com/attachments/1553738433506189414/1561416054620688535/Gemini_Generated_Image_cfloegcfloegcflo.png?ex=6ad64585&is=6ad4f405&hm=c37f27a724420820e50bda19619c9022adb16c3173ef88e736debbf358910670&');
+  if (img) lvlLogoImg = img;
+  return img;
+}
+function lvIconMic(c, cx, cy, s) {
+  c.fillStyle = '#fff'; c.strokeStyle = '#fff'; c.lineWidth = 5; c.lineCap = 'round';
+  rr(c, cx - s * 0.2, cy - s * 0.5, s * 0.4, s * 0.62, s * 0.2); c.fill();
+  c.beginPath(); c.arc(cx, cy - s * 0.04, s * 0.34, 0, Math.PI); c.stroke();
+  c.beginPath(); c.moveTo(cx, cy + s * 0.3); c.lineTo(cx, cy + s * 0.5);
+  c.moveTo(cx - s * 0.2, cy + s * 0.5); c.lineTo(cx + s * 0.2, cy + s * 0.5); c.stroke();
+}
+function lvIconChat(c, cx, cy, s) {
+  c.fillStyle = '#fff'; c.strokeStyle = '#fff'; c.lineWidth = 5; c.lineJoin = 'round';
+  rr(c, cx - s * 0.5, cy - s * 0.42, s, s * 0.72, s * 0.3); c.stroke();
+  c.beginPath(); c.moveTo(cx - s * 0.18, cy + s * 0.3); c.lineTo(cx - s * 0.3, cy + s * 0.52); c.lineTo(cx + s * 0.04, cy + s * 0.3); c.closePath(); c.fill();
+  for (const dx of [-0.2, 0, 0.2]) { c.beginPath(); c.arc(cx + s * dx, cy - s * 0.06, 4, 0, Math.PI * 2); c.fill(); }
+}
 async function levelCard(m, rec, g) {
-  const W = 900, H = 560;
+  const W = 860, H = 880;
+  const FONT = 'Cairo, "Segoe UI", Tahoma, Arial, sans-serif';
+  const { cv, c } = cardBase(W, H);
+  const av = await loadImg(m.displayAvatarURL({ size: 512, extension: 'png', forceStatic: true }));
+  avatarCircle(c, av, W / 2, 190, 140);
+
+  const fancy = /[\u{1D400}-\u{1D7FF}\u{FF00}-\u{FFEF}]/u.test(m.displayName);
+  const name = (fancy ? m.user.username : m.displayName).slice(0, 22);
+  c.textBaseline = 'middle'; c.textAlign = 'center'; c.fillStyle = '#fff';
+  c.font = `bold 54px ${FONT}`;
+  c.fillText(name, W / 2, 392, W - 120);
+
+  const bx = 190, bw = 530, bh = 58;
+  const row = (y, xp, key, rankLabel, icon) => {
+    const x = xpInfo(xp);
+    c.fillStyle = '#27272a'; rr(c, bx, y, bw, bh, bh / 2); c.fill();
+    c.fillStyle = '#fff'; rr(c, bx, y, Math.max(bh, bw * x.cur / x.need), bh, bh / 2); c.fill();
+    const t = `${NF(x.cur)} / ${NF(x.need)}`;
+    c.textAlign = 'center'; c.font = `bold 28px ${FONT}`; c.lineJoin = 'round'; c.lineWidth = 6;
+    c.strokeStyle = '#000'; c.strokeText(t, bx + bw / 2, y + bh / 2);
+    c.fillStyle = '#f4f4f5'; c.fillText(t, bx + bw / 2, y + bh / 2);
+    c.textAlign = 'left'; c.font = `bold 32px ${FONT}`; c.fillStyle = '#fff';
+    c.fillText('lvl.' + x.level, 40, y + bh / 2);
+    icon(c, bx + bw + 70, y + bh / 2, 50);
+    c.font = `bold 24px ${FONT}`; c.fillStyle = '#d4d4d8'; c.direction = 'rtl';
+    c.textAlign = 'left'; c.fillText('إجمالي النقاط: ' + NF(xp), bx, y + bh + 32);
+    c.textAlign = 'right'; c.fillText(`${rankLabel} #${rankOf(g, m.id, key)}`, bx + bw, y + bh + 32);
+    c.direction = 'ltr';
+  };
+  row(450, rec.vxp || 0, 'vxp', 'ترتيبك الصوتي:', lvIconMic);
+  row(600, rec.xp || 0, 'xp', 'ترتيبك الكتابي:', lvIconChat);
+
+  const lg = await levelLogo();
+  const lx = W / 2, ly = 805;
+  c.fillStyle = '#fff'; c.beginPath(); c.arc(lx, ly, 44, 0, Math.PI * 2); c.fill();
+  if (lg) c.drawImage(lg, lg.width * 0.12, lg.height * 0.10, lg.width * 0.76, lg.height * 0.56, lx - 35, ly - 35, 70, 70);
+  return cv.toBuffer('image/png');
+}
+async function levelCardUnused1(m, rec, g) {
+  const W = 1000, H = 380;
+  const { cv, c } = cardBase(W, H);
+  const FONT = 'Cairo, sans-serif';
+  const av = await loadImg(m.displayAvatarURL({ size: 512, extension: 'png', forceStatic: true }));
+  avatarCircle(c, av, 150, H / 2, 100);
+
+  const bx = 380, bw = 570, bh = 42;
+  c.textBaseline = 'middle';
+
+  // الاسم
+  const ng = c.createLinearGradient(290, 0, 950, 0);
+  ng.addColorStop(0, '#ffffff'); ng.addColorStop(1, '#d4d4d8');
+  c.fillStyle = ng; rr(c, 290, 34, 660, 54, 27); c.fill();
+  c.fillStyle = '#000'; c.font = `bold 28px ${FONT}`; c.textAlign = 'center';
+  c.fillText(m.displayName.slice(0, 24), 620, 62, 620);
+
+  const row = (y, xp, key, rankLabel) => {
+    const x = xpInfo(xp);
+    c.fillStyle = '#27272a'; rr(c, bx, y, bw, bh, bh / 2); c.fill();
+    c.fillStyle = '#fff'; rr(c, bx, y, Math.max(bh, bw * x.cur / x.need), bh, bh / 2); c.fill();
+    const t = `${NF(x.cur)} / ${NF(x.need)}`;
+    c.textAlign = 'center'; c.font = `bold 22px ${FONT}`; c.lineJoin = 'round'; c.lineWidth = 5;
+    c.strokeStyle = '#000'; c.strokeText(t, bx + bw / 2, y + bh / 2);
+    c.fillStyle = '#f4f4f5'; c.fillText(t, bx + bw / 2, y + bh / 2);
+    c.textAlign = 'left'; c.font = `bold 26px ${FONT}`; c.fillStyle = '#fff';
+    c.fillText('lvl.' + x.level, 290, y + bh / 2);
+    c.font = `18px ${FONT}`; c.fillStyle = '#a1a1aa'; c.direction = 'rtl';
+    c.textAlign = 'left'; c.fillText('إجمالي النقاط: ' + NF(xp), bx, y + bh + 24);
+    c.textAlign = 'right'; c.fillText(`${rankLabel} #${rankOf(g, m.id, key)}`, bx + bw, y + bh + 24);
+    c.direction = 'ltr';
+  };
+  row(118, rec.xp || 0, 'xp', 'ترتيبك الكتابي:');
+  row(212, rec.vxp || 0, 'vxp', 'ترتيبك الصوتي:');
+
+  // اللوجو
+  const lg = await levelLogo();
+  const lx = W - 52, ly = H - 50;
+  c.fillStyle = '#fff'; c.beginPath(); c.arc(lx, ly, 30, 0, Math.PI * 2); c.fill();
+  if (lg) c.drawImage(lg, lg.width * 0.12, lg.height * 0.10, lg.width * 0.76, lg.height * 0.56, lx - 24, ly - 24, 48, 48);
+  return cv.toBuffer('image/png');
+}
+async function levelCardOld(m, rec, g) {
+  const W = 900, H = 640;
   const { cv, c } = cardBase(W, H);
   const av = await loadImg(m.user.displayAvatarURL({ size: 256, extension: 'png', forceStatic: true }));
   avatarCircle(c, av, W / 2, 125, 85);
@@ -3791,7 +4135,10 @@ async function levelCard(m, rec, g) {
   };
   row(310, rec.vxp || 0, 'vxp', 'ترتيبك الصوتي:');
   row(430, rec.xp || 0, 'xp', 'ترتيبك الكتابي:');
-  c.textAlign = 'center'; c.font = 'bold 18px sans-serif'; c.fillStyle = '#52525b'; c.fillText('OPS SYSTEM', W / 2, H - 26);
+  const lg = await levelLogo();
+  const ly = H - 66;
+  c.fillStyle = '#fff'; c.beginPath(); c.arc(W / 2, ly, 42, 0, Math.PI * 2); c.fill();
+  if (lg) c.drawImage(lg, lg.width * 0.12, lg.height * 0.10, lg.width * 0.76, lg.height * 0.56, W / 2 - 34, ly - 34, 68, 68);
   return cv.toBuffer('image/png');
 }
 HANDLERS.level = async function (msg, mod, a) {
@@ -3838,8 +4185,126 @@ HANDLERS.profile = async function (msg, mod, a) {
   const m = (await targetMember(msg, a)) || mod;
   const rec = (db.guilds[msg.guildId] || { members: {} }).members[m.id] || {};
   await msg.reply({ files: [{ attachment: await profileCard(m, rec), name: 'profile.png' }], allowedMentions: NOPING });
+};// ---------- بروفايل جديد (أبيض وأسود + أزرار) ----------
+const PF_BADGES = {
+  Staff: 'Discord Staff', Partner: 'Partner', Hypesquad: 'HypeSquad Events', BugHunterLevel1: 'Bug Hunter', BugHunterLevel2: 'Bug Hunter+',
+  HypeSquadOnlineHouse1: 'Bravery', HypeSquadOnlineHouse2: 'Brilliance', HypeSquadOnlineHouse3: 'Balance',
+  PremiumEarlySupporter: 'Early Supporter', VerifiedDeveloper: 'Verified Dev', CertifiedModerator: 'Moderator', ActiveDeveloper: 'Active Dev', VerifiedBot: 'Verified Bot',
+};
+const pfRows = (inv, tid, view, hasBanner) => [{ type: 1, components: [
+  { type: 2, style: view === 'discord' ? 1 : 2, custom_id: `pf:p:${inv}:${tid}:${view}`, label: view === 'stats' ? 'البروفايل' : 'الإحصائيات' },
+  { type: 2, style: 2, custom_id: `pf:b:${inv}:${tid}:${view}`, label: 'البنر', disabled: !hasBanner },
+  { type: 2, style: 2, custom_id: `pf:a:${inv}:${tid}:${view}`, label: 'الأفتار' },
+] }];
+
+async function pfStatsCard(m, u) {
+  const gid = m.guild.id;
+  const rec = (db.guilds[gid] || { members: {} }).members[m.id] || {};
+  const x = xpInfo(rec.xp || 0);
+  const bal = Number((dbr('economy', gid)[m.id] || {}).balance) || 0;
+  const cur = String(ecoCfg(gid).currencyName || 'OPS').slice(0, 8);
+  const W = 1000, H = 440;
+  const { cv, c } = cardBase(W, H);
+  const av = await loadImg(m.displayAvatarURL({ size: 512, extension: 'png', forceStatic: true }));
+  avatarCircle(c, av, 190, H / 2, 140);
+  const bx = 440, bw = 520, bh = 58;
+  c.textBaseline = 'middle';
+  const pill = (y, text) => {
+    const g = c.createLinearGradient(bx, 0, bx + bw, 0);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(1, '#a1a1aa');
+    c.fillStyle = g; rr(c, bx, y, bw, bh, bh / 2); c.fill();
+    c.fillStyle = '#000'; c.font = 'bold 30px sans-serif'; c.textAlign = 'center';
+    c.fillText(String(text), bx + bw / 2, y + bh / 2, bw - 40);
+  };
+  const label = (y, text) => { c.fillStyle = '#fff'; c.font = 'bold 26px sans-serif'; c.textAlign = 'right'; c.fillText(text, bx - 16, y + bh / 2); };
+  pill(70, m.displayName.slice(0, 22));
+  pill(150, ecoFmt(bal)); label(150, cur);
+  const y3 = 230;
+  c.fillStyle = '#27272a'; rr(c, bx, y3, bw, bh, bh / 2); c.fill();
+  c.fillStyle = '#fff'; rr(c, bx, y3, Math.max(bh, bw * x.cur / x.need), bh, bh / 2); c.fill();
+  const t = `${NF(x.cur)} / ${NF(x.need)}`;
+  c.textAlign = 'center'; c.font = 'bold 26px sans-serif'; c.lineJoin = 'round'; c.lineWidth = 5;
+  c.strokeStyle = '#000'; c.strokeText(t, bx + bw / 2, y3 + bh / 2);
+  c.fillStyle = '#f4f4f5'; c.fillText(t, bx + bw / 2, y3 + bh / 2);
+  label(y3, 'lvl.' + x.level);
+  c.font = '22px sans-serif'; c.fillStyle = '#a1a1aa'; c.direction = 'rtl'; c.textAlign = 'center';
+  c.fillText('إجمالي النقاط: ' + NF(rec.xp || 0), bx + bw / 2, y3 + bh + 34);
+  c.direction = 'ltr';
+  c.textAlign = 'center'; c.font = 'bold 18px sans-serif'; c.fillStyle = '#52525b'; c.fillText('OPS SYSTEM', W / 2, H - 26);
+  return cv.toBuffer('image/png');
+}
+
+async function pfDiscordCard(m, u) {
+  const W = 900, H = 480;
+  const { cv, c } = cardBase(W, H);
+  const bu = u.bannerURL({ size: 600, extension: 'png', forceStatic: true });
+  const ban = bu ? await loadImg(bu) : null;
+  c.save(); rr(c, 0, 0, W, H, 28); c.clip();
+  if (ban) {
+    const s = Math.max(W / ban.width, 210 / ban.height);
+    c.drawImage(ban, (W - ban.width * s) / 2, (210 - ban.height * s) / 2, ban.width * s, ban.height * s);
+    c.globalCompositeOperation = 'saturation'; c.fillStyle = '#000'; c.fillRect(0, 0, W, 210); c.globalCompositeOperation = 'source-over';
+  } else { c.fillStyle = '#27272a'; c.fillRect(0, 0, W, 210); }
+  c.restore();
+  const av = await loadImg(m.displayAvatarURL({ size: 256, extension: 'png', forceStatic: true }));
+  c.fillStyle = '#0a0a0a'; c.beginPath(); c.arc(140, 210, 92, 0, Math.PI * 2); c.fill();
+  avatarCircle(c, av, 140, 210, 82);
+  c.textBaseline = 'middle'; c.textAlign = 'left';
+  c.fillStyle = '#fff'; c.font = 'bold 40px sans-serif'; c.fillText(m.displayName.slice(0, 22), 50, 340);
+  c.fillStyle = '#a1a1aa'; c.font = '24px sans-serif'; c.fillText('@' + u.username, 50, 385);
+  const labels = (u.flags ? u.flags.toArray() : []).map((f) => PF_BADGES[f]).filter(Boolean);
+  let px = W - 40, py = 250;
+  c.font = 'bold 20px sans-serif';
+  for (const l of labels) {
+    const w = c.measureText(l).width + 28;
+    if (px - w < 300) { px = W - 40; py += 48; }
+    px -= w;
+    c.fillStyle = '#18181b'; rr(c, px, py, w, 38, 19); c.fill();
+    c.strokeStyle = '#3f3f46'; c.lineWidth = 2; rr(c, px, py, w, 38, 19); c.stroke();
+    c.fillStyle = '#fff'; c.textAlign = 'center'; c.fillText(l, px + w / 2, py + 19);
+    px -= 10;
+  }
+  c.textAlign = 'center'; c.fillStyle = '#71717a'; c.font = '18px sans-serif';
+  c.fillText(`انضم للسيرفر: ${m.joinedAt ? m.joinedAt.toISOString().slice(0, 10) : '-'}   •   أنشأ الحساب: ${m.user.createdAt.toISOString().slice(0, 10)}`, W / 2, H - 28);
+  return cv.toBuffer('image/png');
+}
+
+HANDLERS.profile = async function (msg, mod, a) {
+  need(canvasLib, 'لازم تثبّت المكتبة: npm i @napi-rs/canvas');
+  const m = (await targetMember(msg, a)) || mod;
+  const u = await m.user.fetch(true).catch(() => m.user);
+  await msg.reply({
+    files: [{ attachment: await pfStatsCard(m, u), name: 'profile.png' }],
+    components: pfRows(msg.author.id, m.id, 'stats', !!u.banner),
+    allowedMentions: NOPING,
+  });
 };
 
+async function onProfileInteraction(i) {
+  try {
+    const cid = String(i.customId || '');
+    if (!i.guildId || !cid.startsWith('pf:') || !i.isButton()) return;
+    const [, act, inv, tid, view] = cid.split(':');
+    if (i.user.id !== inv) return void (await i.reply({ content: '⚠️ هذي الأزرار لصاحب الأمر.', flags: 64 }));
+    const m = await i.guild.members.fetch(tid).catch(() => null);
+    if (!m) return void (await i.reply({ content: '⚠️ العضو غير موجود بالسيرفر.', flags: 64 }));
+    const u = await m.user.fetch(true).catch(() => m.user);
+    if (act === 'a') {
+      return void (await i.reply({ files: [{ attachment: m.displayAvatarURL({ size: 1024, extension: 'png', forceStatic: true }), name: 'avatar.png' }], flags: 64 }));
+    }
+    if (act === 'b') {
+      const bu = u.bannerURL({ size: 1024, extension: 'png', forceStatic: true });
+      if (!bu) return void (await i.reply({ content: '⚠️ هذا الشخص ما عنده بنر.', flags: 64 }));
+      return void (await i.reply({ files: [{ attachment: bu, name: 'banner.png' }], flags: 64 }));
+    }
+    if (act === 'p' && canvasLib) {
+      await i.deferUpdate();
+      const next = view === 'stats' ? 'discord' : 'stats';
+      const png = next === 'stats' ? await pfStatsCard(m, u) : await pfDiscordCard(m, u);
+      await i.editReply({ files: [{ attachment: png, name: 'profile.png' }], attachments: [], components: pfRows(inv, tid, next, !!u.banner) });
+    }
+  } catch (e) { console.error('profile:', e.message); }
+}
 // ---------- لوحة الإحصائيات (statistics) ----------
 async function statsCard(guild, n) {
   const g = db.guilds[guild.id] || { members: {} };
@@ -4000,7 +4465,48 @@ HANDLERS.messages = async function (msg) {
   await msg.reply({ embeds: [e], allowedMentions: NOPING });
 };
 
+// يمسح n رسالة (دفعات 100). ديسكورد ما بيسمح بمسح رسائل أقدم من 14 يوم، والمثبتة بتنتخطى
+async function clearMessages(ch, n) {
+  const limit = Date.now() - 14 * 864e5 + 60000;
+  let left = n, deleted = 0, before, old = false;
+  while (left > 0 && !old) {
+    const batch = await ch.messages.fetch({ limit: Math.min(100, left), before });
+    if (!batch.size) break;
+    before = batch.last().id;
+    left -= batch.size;
+    const fresh = batch.filter((m) => m.createdTimestamp > limit && !m.pinned);
+    if (batch.some((m) => m.createdTimestamp <= limit)) old = true;
+    if (fresh.size) deleted += (await ch.bulkDelete(fresh, true)).size;
+    if (batch.size < 100 && left > 0) break;
+  }
+  return { deleted, old };
+}
 
+// رسالة "تم مسح N رسالة" (مكونات بدون لون) وتنحذف بعد 5 ثواني
+async function clearDone(ch, r) {
+  const note = await client.rest.post(Routes.channelMessages(ch.id), { body: {
+    flags: 1 << 15, allowed_mentions: { parse: [] },
+    components: [{ type: 17, components: [{ type: 10,
+      content: '```\nتم مسح ' + NF(r.deleted) + ' رسالة.\n```' + (r.old ? '\n-# الرسائل الأقدم من 14 يوم ما بتنمسح' : ''),
+    }] }],
+  } }).catch(() => null);
+  if (note) setTimeout(() => client.rest.delete(Routes.channelMessage(ch.id, note.id)).catch(() => {}), 5000);
+}
+
+// أزرار تأكيد / إلغاء المسح الشامل
+async function onClearInteraction(i) {
+  try {
+    const cid = String(i.customId || '');
+    if (!i.guildId || !i.isButton() || !cid.startsWith('clr:')) return;
+    const [, act, modId] = cid.split(':');
+    if (i.user.id !== modId) return void (await i.reply({ content: '⚠️ هذا الزر للمشرف اللي كتب الأمر.', flags: 64 }));
+    await i.deferUpdate();
+    const ch = i.channel;
+    await i.message.delete().catch(() => {});
+    if (act === 'n') return;
+    await clearDone(ch, await clearMessages(ch, 1e9));
+  } catch (e) { console.error('clear:', e.message); }
+}
 // إخفاء/قفل: البوت يعطي نفسه استثناء أولاً عشان ما يفقد الوصول للروم
 async function chatPerm(msg, mod, perms, kind) {
   const ch = msg.mentions.channels.first() || msg.channel;
@@ -4200,8 +4706,11 @@ async function imgPunish(msg, cfg, item) {
     else if (cfg.action === 'ban' && mem && mem.bannable) await msg.guild.members.ban(msg.author.id, { reason, deleteMessageSeconds: 3600 });
   } catch (_) {}
   logInf(msg.guildId, msg.author.id, 'image', client.user.id, item.name);
-  const n = await msg.channel.send({ content: `🛡️ ${msg.author}، تم حذف صورة احتيالية.`, allowedMentions: { users: [msg.author.id] } }).catch(() => null);
-  if (n) setTimeout(() => n.delete().catch(() => {}), 5000);
+  const n = await client.rest.post(Routes.channelMessages(msg.channelId), { body: {
+    flags: 1 << 15, allowed_mentions: { users: [msg.author.id] },
+    components: v2Comps(`🛡️ <@${msg.author.id}>، تم حذف صورة احتيالية.`),
+  } }).catch(() => null);
+  if (n) setTimeout(() => client.rest.delete(Routes.channelMessage(msg.channelId, n.id)).catch(() => {}), 5000);
 }
 
 async function onImageScan(msg) {
@@ -4583,7 +5092,19 @@ const TV_DEF_NAME = 'Room {user}';
 const TV_DEF_TITLE = '🎛️ لوحة التحكم بالغرفة';
 const TV_DEF_DESC = 'أهلاً {user}، هذه غرفتك المؤقتة {channel}.\nاستخدم الأزرار بالأسفل للتحكم فيها.';
 const tvBusy = new Set();
-
+const TV_BTNS = [
+  ['rename', 'تغيير اسم', '✏️'], ['limit', 'حد عدد الأعضاء', '👥'], ['lock', 'خصوصية قناتك', '🔒'], ['wait', 'غرفة الانتظار', '⏳'], ['chat', 'دردشة', '💬'],
+  ['permit', 'الثقة', '✅'], ['unpermit', 'عدم الثقة', '🚫'], ['invite', 'دعوة', '📞'], ['kick', 'طرد', '👢'], ['region', 'تغيير منطقة', '🌍'],
+  ['ban', 'حظر', '⛔'], ['unban', 'رفع الحظر', '♻️'], ['claim', 'أخذ الملكية', '👑'], ['transfer', 'نقل ملكية', '🔁'], ['delete', 'حذف', '🗑️'],
+];const TV_EMO_GUILD = '1537751084171272213';
+const tvGlobalEmojis = () => tvEmojis(db.tvEmojis);
+const TV_EMO_OK = (v) => typeof v === 'string' && v.length <= 64 && (/^<a?:\w{1,32}:\d{15,25}>$/.test(v) || EMOJI_RE.test(v));
+function tvEmojis(src) {
+  const o = {};
+  src = src && typeof src === 'object' ? src : {};
+  for (const [a, , def] of TV_BTNS) o[a] = TV_EMO_OK(src[a]) ? src[a] : def;
+  return o;
+}
 function tvCfg(gid) {
   const s = (db.settings[gid] || {}).tempvoice || {};
   const id = (v) => (SNOW.test(String(v || '')) ? String(v) : null);
@@ -4600,6 +5121,7 @@ function tvCfg(gid) {
     transferOwner: s.transferOwner === undefined ? true : !!s.transferOwner,
     ctl: { title: t(c.title, TV_DEF_TITLE, 256), description: t(c.description, TV_DEF_DESC, 2000), color: COLOR_RE.test(String(c.color)) ? c.color : '#fbbf24' },
     perms: { allowRoles: ids(p.allowRoles), blockRoles: ids(p.blockRoles) },
+    emojis: tvGlobalEmojis(),
   };
 }
 
@@ -4630,7 +5152,10 @@ async function tvEnsure(guild, cfg) {
 app.get('/api/guild/:id/tempvoice', auth, wrap(async (req, res) => {
   const info = await ctxGuild(req, res); if (!info) return;
   res.json({
-    canManage: info.canManage, guildPremium: isPremium(info.id), cfg: tvCfg(info.id), roles: roleList(info.id),
+    canManage: info.canManage, guildPremium: isPremium(info.id), cfg: { ...tvCfg(info.id), games: gvCfg(info.id) }, roles: roleList(info.id),
+        buttons: TV_BTNS.map(([act, label]) => ({ act, label })),
+            isOwner: OWNER_IDS.includes(req.session.user.id),
+    hasPanel: !!(((db.settings[info.id] || {}).tvpanel || {}).msg),
     channels: textChannels(info.id),
     voiceChannels: chanList(info.id, [ChannelType.GuildVoice]),
     categories: chanList(info.id, [ChannelType.GuildCategory]),
@@ -4675,12 +5200,21 @@ app.put('/api/guild/:id/tempvoice', auth, wrap(async (req, res) => {
       deleteEmpty: b.deleteEmpty === true, transferOwner: b.transferOwner === true,
       ctl: { title: title.trim() || TV_DEF_TITLE, description: desc.trim() || TV_DEF_DESC, color: c.color },
       perms: { allowRoles: roles(p.allowRoles), blockRoles: roles(p.blockRoles) },
+            emojis: tvGlobalEmojis(),
     };
   } catch (e) { if (e.code) return res.status(400).json({ error: e.code }); throw e; }
+    let games;
+  try { games = gvClean(b.games, info.id); }
+  catch (e) { if (e.code) return res.status(400).json({ error: e.code }); throw e; }
+  if (games.joinChannel && games.joinChannel === next.joinChannel) return res.status(400).json({ error: 'same_channel' });
+  if (games.enabled) {
+    try { await gvEnsure(cg, games); } catch (e) { return res.status(400).json({ error: 'discord_error', detail: discordMsg(e) }); }
+  }
+  S(info.id).gamevoice = games;
   if (next.enabled) {
     try { await tvEnsure(cg, next); await tvSendPanel(cg, next); }
     catch (e) { return res.status(400).json({ error: 'discord_error', detail: discordMsg(e) }); }
-  }
+  }  if (OWNER_IDS.includes(req.session.user.id) && b.emojis && typeof b.emojis === 'object') { db.tvEmojis = tvEmojis(b.emojis); }
   S(info.id).tempvoice = next;
   dirty = true;
   res.json({ ok: true });
@@ -4694,14 +5228,22 @@ function tvFind(guildId, userId, member) {
 
 // لوحة وحدة ثابتة (ما فيها أي ايدي غرفة)
 function tvPanelBody(cfg) {
-  const btn = (a, label, emoji, style = 2) => ({ type: 2, style, custom_id: `tv:${a}:0`, label, emoji: { name: emoji } });
+  const TV_IMG = 'https://cdn.discordapp.com/attachments/1560739123625590844/1561146531996893284/Screenshot_2026-10-18_013545.png?ex=6ad54a81&is=6ad3f901&hm=419de6a6354e29b5fbd1ad09bf3872840a146fecf151a763ae368f4175f058d9&';
+  const emo = (v) => { const m = /^<(a?):(\w{1,32}):(\d{15,25})>$/.exec(v || ''); return m ? { id: m[3], name: m[2], animated: !!m[1] } : { name: v }; };
+  const btns = TV_BTNS.map(([act]) => ({ type: 2, style: 2, custom_id: `tv:${act}:0`, emoji: emo(cfg.emojis[act]) }));
   const vars = { user: 'صاحب الغرفة', userName: 'صاحب الغرفة', channel: 'غرفتك' };
   return {
     allowed_mentions: { parse: [] },
-    embeds: [{ title: cfg.ctl.title, description: tpl(cfg.ctl.description, vars).slice(0, 4000), color: parseInt(cfg.ctl.color.slice(1), 16) }],
+    embeds: [{
+      title: cfg.ctl.title,
+      description: tpl(cfg.ctl.description, vars).slice(0, 4000),
+      color: parseInt(cfg.ctl.color.slice(1), 16),
+      image: { url: TV_IMG },
+    }],
     components: [
-      { type: 1, components: [btn('lock', 'قفل / فتح', '🔒'), btn('hide', 'إخفاء / إظهار', '👁️'), btn('rename', 'الاسم', '✏️'), btn('limit', 'الحد', '👥'), btn('kick', 'طرد', '👢')] },
-      { type: 1, components: [btn('permit', 'سماح', '✅'), btn('transfer', 'نقل الملكية', '🔁'), btn('claim', 'استلام', '👑'), btn('delete', 'حذف', '🗑️', 4)] },
+      { type: 1, components: btns.slice(0, 5) },
+      { type: 1, components: btns.slice(5, 10) },
+      { type: 1, components: btns.slice(10, 15) },
     ],
   };
 }
@@ -4720,8 +5262,34 @@ async function tvSendPanel(guild, cfg) {
     const m = await client.rest.post(Routes.channelMessages(cc.id), { body: tvPanelBody(cfg) });
     s.tvpanel = { ch: cc.id, msg: m.id };
     dirty = true;
-  } catch (e) { console.error('[tempvoice] panel:', e.message); }
-}
+  } catch (e) { console.error('[tempvoice] panel:', JSON.stringify(e.rawError || e.message)); throw e; }
+}app.get('/api/guild/:id/appemojis', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res); if (!info) return;
+  let items = [];
+  try { const j = await client.rest.get(`/applications/${client.user.id}/emojis`); items = j.items || []; } catch (_) {}
+  const hub = client.guilds.cache.get(TV_EMO_GUILD);
+  const hubList = hub ? [...hub.emojis.cache.values()].map((e) => ({ id: e.id, name: e.name, animated: !!e.animated, tag: `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>` })) : [];
+  res.json({ list: items.map((e) => ({ id: e.id, name: e.name, animated: !!e.animated, tag: `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>` })), hub: hubList });
+}));
+
+app.post('/api/guild/:id/tempvoice/panel', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res, { manage: true }); if (!info) return;
+  const cg = client.guilds.cache.get(info.id);
+  const cfg = tvCfg(info.id);
+  if (!cfg.controlChannel || !cg.channels.cache.has(cfg.controlChannel)) return res.status(400).json({ error: 'no_channel' });
+  try {
+    await tvSendPanel(cg, cfg);
+    if (OWNER_IDS.includes(req.session.user.id)) {
+      for (const g of client.guilds.cache.values()) {
+        if (g.id === cg.id) continue;
+        const c = tvCfg(g.id);
+        if (c.enabled && (db.settings[g.id] || {}).tvpanel) tvSendPanel(g, c).catch(() => {});
+      }
+    }
+    res.json({ ok: true });
+  }
+  catch (e) { res.status(400).json({ error: 'discord_error', detail: discordMsg(e) }); }
+}));
 function tvAllowed(cfg, member) {
   const r = member.roles.cache;
   if (cfg.perms.blockRoles.some((x) => r.has(x))) return false;
@@ -4750,7 +5318,12 @@ async function tvCreate(guild, member, cfg) {
   const parent = cfg.category && guild.channels.cache.has(cfg.category) ? cfg.category : (jc ? jc.parentId : null);
   const bitrate = Math.max(8000, Math.min(cfg.bitrate * 1000, guild.maximumBitrate || 96000));
   const ch = await guild.channels.create({ name, type: ChannelType.GuildVoice, parent, userLimit: cfg.limit, bitrate, reason: 'OPS: temp voice' });
-  const moved = await member.voice.setChannel(ch).then(() => true, () => false);
+    await ch.permissionOverwrites.edit(client.user.id, { ViewChannel: true, Connect: true, MoveMembers: true, ManageChannels: true }).catch((e) => console.error('[tempvoice] perms:', discordMsg(e)));
+  let moved = false;
+  for (let k = 0; k < 3 && !moved; k++) {
+    try { await member.voice.setChannel(ch, 'OPS: temp voice'); moved = true; }
+    catch (e) { console.error('[tempvoice] move failed:', discordMsg(e)); await new Promise((r) => setTimeout(r, 700)); }
+  }
   if (!moved) { await ch.delete().catch(() => {}); return; }
   const room = { owner: member.id, msg: null, mch: null, at: Date.now() };
   dbk('tvrooms', guild.id)[ch.id] = room;
@@ -4853,7 +5426,7 @@ async function onTempVoiceInteraction(i) {
       return void (await say2('👑 صرت مالك الغرفة.'));
     }
     if (!isOwner && !member.permissions.has(PermissionFlagsBits.ManageChannels)) return void (await say2('هذا الزر لمالك الغرفة فقط.'));
-
+    if (isBtn && !['lock', 'hide', 'delete', 'rename', 'limit', 'kick', 'permit', 'transfer', 'claim'].includes(act)) return void (await say2('🚧 هذا الزر قيد التجهيز.'));
     // أزرار تفتح مودال
     if (isBtn && (act === 'rename' || act === 'limit')) {
       const input = new TextInputBuilder().setCustomId('v').setStyle(TextInputStyle.Short).setRequired(true)
@@ -4927,6 +5500,247 @@ async function onTempVoiceInteraction(i) {
   }
 }
 // ===================== نظام الفضفضة =====================
+// ===================== روم الألعاب المؤقت =====================
+const GV_MAX = 25;
+const GV_DEF_NAME = 'لم يتم التخصيص بعد';
+const GV_DEF_MSG = {
+  name: 'games', channel: null, content: '{user}', mode: 'classic', color: '#8b5cf6',
+  author: { name: '', icon: '', url: '' }, title: '🎮 اختيار اللعبة وتخصيص الروم', titleUrl: '',
+  description: 'أهلاً بك {user} في روم الألعاب الخاص بك!\n\nيرجى اختيار اللعبة التي تود لعبها من الأزرار بالأسفل، وسيتم تحديث اسم الروم وتحديد عدد المقاعد تلقائياً.\n\n⚠️ **تنبيه:** لديك **120 ثانية** لتخصيص الروم وإلا سيتم حذفه تلقائياً إذا ظل فارغاً.',
+  thumbnail: '', fields: [], image: '', footer: { text: 'نظام رومات الألعاب المؤقتة', icon: '' },
+  timestamp: false, transparent: false, spoiler: false, blocks: [], kind: 'none', placeholder: '', actions: [],
+};
+const gvBusy = new Set();
+const gvEmo = (e) => { const m = /^<(a?):(\w{1,32}):(\d{15,25})>$/.exec(e || ''); return m ? { id: m[3], name: m[2], animated: !!m[1] } : { name: e }; };
+
+function gvCfg(gid) {
+  const s = (db.settings[gid] || {}).gamevoice || {};
+  const id = (v) => (SNOW.test(String(v || '')) ? String(v) : null);
+  return {
+    enabled: !!s.enabled, joinChannel: id(s.joinChannel), category: id(s.category), logChannel: id(s.logChannel),
+    nameTpl: typeof s.nameTpl === 'string' && s.nameTpl.trim() ? s.nameTpl.slice(0, 100) : GV_DEF_NAME,
+    bitrate: Number.isInteger(s.bitrate) && s.bitrate >= 8 && s.bitrate <= 384 ? s.bitrate : 64,
+    allowCustom: s.allowCustom !== false,
+    games: arr(s.games).filter((x) => x && typeof x.name === 'string' && x.id).slice(0, GV_MAX).map((x) => ({
+      id: String(x.id), name: x.name.slice(0, 80), emoji: typeof x.emoji === 'string' ? x.emoji.slice(0, 64) : '',
+      fixed: x.fixed === true, seats: Math.min(99, Math.max(1, parseInt(x.seats, 10) || 5)),
+    })),
+    msg: s.msg && typeof s.msg === 'object' ? s.msg : jcopy(GV_DEF_MSG),
+  };
+}
+
+function gvClean(b, gid) {
+  b = b && typeof b === 'object' ? b : {};
+  const cg = client.guilds.cache.get(gid);
+  const pick = (v, types) => {
+    if (!v) return null;
+    const ch = typeof v === 'string' && cg.channels.cache.get(v);
+    if (!ch) return null;
+    if (!types.includes(ch.type)) throw codeErr('bad_channel');
+    return ch.id;
+  };
+  const allowCustom = b.allowCustom !== false;
+  const list = arr(b.games);
+  if (list.length > GV_MAX - (allowCustom ? 1 : 0)) throw codeErr('limit_reached');
+  const seen = new Set();
+  const games = list.map((x) => {
+    x = x || {};
+    const name = String(x.name == null ? '' : x.name).trim();
+    if (!name || name.length > 80) throw codeErr('bad_label');
+    const emoji = String(x.emoji == null ? '' : x.emoji).trim();
+    if (emoji && !TV_EMO_OK(emoji)) throw codeErr('bad_emoji');
+    let id = String(x.id || '');
+    if (!/^[a-f0-9]{6,16}$/.test(id) || seen.has(id)) id = newId();
+    seen.add(id);
+    const seats = parseInt(x.seats, 10);
+    return { id, name, emoji, fixed: x.fixed === true, seats: seats >= 1 && seats <= 99 ? seats : 5 };
+  });
+  const nameTpl = String(b.nameTpl == null ? '' : b.nameTpl).trim();
+  if (nameTpl.length > 100) throw codeErr('bad_text');
+  const bitrate = Number(b.bitrate);
+  if (!Number.isInteger(bitrate) || bitrate < 8 || bitrate > 384) throw codeErr('bad_value');
+  const msg = embClean({ ...(b.msg || GV_DEF_MSG), name: 'games', channel: null, kind: 'none', actions: [] }, gid, 'gvmsg');
+  return {
+    enabled: b.enabled === true,
+    joinChannel: pick(b.joinChannel, [ChannelType.GuildVoice]),
+    category: pick(b.category, [ChannelType.GuildCategory]),
+    logChannel: isPremium(gid) ? pick(b.logChannel, [ChannelType.GuildText]) : null,
+    nameTpl: nameTpl || GV_DEF_NAME, bitrate, allowCustom, games, msg,
+  };
+}
+
+async function gvEnsure(guild, g) {
+  let cat = g.category && guild.channels.cache.get(g.category);
+  if (!cat) {
+    cat = await guild.channels.create({ name: 'OPS Games', type: ChannelType.GuildCategory, reason: 'OPS: game voice' });
+    g.category = cat.id;
+  }
+  if (!(g.joinChannel && guild.channels.cache.has(g.joinChannel))) {
+    const c = await guild.channels.create({ name: '➕ انشاء روم ألعاب', type: ChannelType.GuildVoice, parent: cat.id, reason: 'OPS: game voice' });
+    g.joinChannel = c.id;
+  }
+}
+
+// رسالة التحكم + أزرار الألعاب
+function gvBody(cfg, chId, member, guild) {
+  const vars = { user: `<@${member.id}>`, userName: member.displayName, username: member.user.username, userid: member.id, server: guild.name, channel: `<#${chId}>` };
+  const doc = JSON.parse(JSON.stringify(cfg.msg).replace(/\{(\w+)\}/g, (x, k) => (has(vars, k) ? JSON.stringify(String(vars[k])).slice(1, -1) : x)));
+  const body = embBody(doc);
+  body.allowed_mentions = { users: [member.id] };
+  const btns = cfg.games.map((g) => Object.assign(
+    { type: 2, style: 2, custom_id: `gv:g:${g.id}:${chId}`, label: g.name.slice(0, 80) }, g.emoji ? { emoji: gvEmo(g.emoji) } : {}));
+  if (cfg.allowCustom) btns.push({ type: 2, style: 1, custom_id: `gv:o:0:${chId}`, label: 'لعبة أخرى', emoji: { name: '✨' } });
+  const rows = [];
+  for (let i = 0; i < btns.length; i += 5) rows.push({ type: 1, components: btns.slice(i, i + 5) });
+  if (rows.length) {
+    if (body.flags & (1 << 15)) body.components[0].components.push({ type: 14, divider: true, spacing: 1 }, ...rows);
+    else body.components = (body.components || []).concat(rows);
+  }
+  return body;
+}
+
+async function gvCreate(guild, member, cfg) {
+  const vars = { user: member.displayName, username: member.user.username, userid: member.id, server: guild.name };
+  const name = (tpl(cfg.nameTpl, vars).trim() || 'Game Room').slice(0, 100);
+  const jc = guild.channels.cache.get(cfg.joinChannel);
+  const parent = cfg.category && guild.channels.cache.has(cfg.category) ? cfg.category : (jc ? jc.parentId : null);
+  const bitrate = Math.max(8000, Math.min(cfg.bitrate * 1000, guild.maximumBitrate || 96000));
+  const ch = await guild.channels.create({ name, type: ChannelType.GuildVoice, parent, userLimit: 0, bitrate, reason: 'OPS: game voice' });
+  await ch.permissionOverwrites.edit(client.user.id, { ViewChannel: true, Connect: true, MoveMembers: true, ManageChannels: true, SendMessages: true, EmbedLinks: true }).catch(() => {});
+  let moved = false;
+  for (let k = 0; k < 3 && !moved; k++) {
+    try { await member.voice.setChannel(ch, 'OPS: game voice'); moved = true; }
+    catch (e) { await new Promise((r) => setTimeout(r, 700)); }
+  }
+  if (!moved) { await ch.delete().catch(() => {}); return; }
+  await ch.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: false }).catch(() => {}); // قفل الشات لحد ما يختار
+  const room = { owner: member.id, at: Date.now(), chosen: false, msg: null };
+  dbk('gvrooms', guild.id)[ch.id] = room; dirty = true;
+  try {
+    const up = embUpload(guild.id, gvBody(cfg, ch.id, member, guild));
+    const m = await client.rest.post(Routes.channelMessages(ch.id), { body: up.body, files: up.files });
+    room.msg = m.id; dirty = true;
+  } catch (e) { console.error('[gamevoice] panel:', JSON.stringify(e.rawError || e.message)); }
+  setTimeout(() => gvExpire(guild.id, ch.id).catch(() => {}), 120000);
+}
+
+async function gvExpire(gid, chId) {
+  const guild = client.guilds.cache.get(gid), room = dbr('gvrooms', gid)[chId];
+  if (!guild || !room || room.chosen) return;
+  const ch = guild.channels.cache.get(chId);
+  if (!ch) { delete dbr('gvrooms', gid)[chId]; dirty = true; return; }
+  if (!ch.members.filter((m) => !m.user.bot).size) await gvDelete(guild, chId);
+}
+
+async function gvArchive(guild, ch, room) {
+  const lc = gvCfg(guild.id).logChannel && guild.channels.cache.get(gvCfg(guild.id).logChannel);
+  if (!lc || typeof lc.send !== 'function' || !isPremium(guild.id) || !room || !ch.messages) return;
+  const msgs = await ch.messages.fetch({ limit: 100 }).catch(() => null);
+  if (!msgs || !msgs.size) return;
+  const text = [...msgs.values()].reverse().map((m) => `[${new Date(m.createdTimestamp).toISOString()}] ${m.author.tag}: ${m.content || '(مرفق/إيمبد)'}`).join('\n');
+  await lc.send({ content: `📜 سجل محادثة روم الألعاب **${cut(ch.name, 80)}** — المالك <@${room.owner}>`, files: [{ attachment: Buffer.from(text, 'utf8'), name: 'chat-log.txt' }], allowedMentions: { parse: [] } }).catch(() => {});
+}
+
+async function gvDelete(guild, chId) {
+  const rooms = dbk('gvrooms', guild.id), room = rooms[chId], ch = guild.channels.cache.get(chId);
+  delete rooms[chId]; dirty = true;
+  if (ch) { try { await gvArchive(guild, ch, room); } catch (_) {} await ch.delete('OPS: game voice').catch(() => {}); }
+}
+
+async function gvSweep() {
+  for (const guild of client.guilds.cache.values()) {
+    const rooms = db.gvrooms && db.gvrooms[guild.id];
+    if (!rooms) continue;
+    for (const id of Object.keys(rooms)) {
+      const ch = guild.channels.cache.get(id);
+      if (!ch) { delete rooms[id]; dirty = true; }
+      else if (!ch.members.filter((m) => !m.user.bot).size) await gvDelete(guild, id);
+    }
+  }
+}
+
+async function onGameVoice(o, n) {
+  try {
+    const guild = n.guild, member = n.member || o.member;
+    if (!member || member.user.bot) return;
+    const cfg = gvCfg(guild.id), rooms = dbr('gvrooms', guild.id);
+    if (o.channelId && o.channelId !== n.channelId && rooms[o.channelId]) {
+      const room = rooms[o.channelId], ch = guild.channels.cache.get(o.channelId);
+      if (!ch) { delete rooms[o.channelId]; dirty = true; }
+      else {
+        const humans = ch.members.filter((m) => !m.user.bot);
+        if (!humans.size) await gvDelete(guild, ch.id);
+        else if (room.owner === member.id) { room.owner = humans.first().id; dirty = true; }
+      }
+    }
+    if (cfg.enabled && n.channelId && n.channelId === cfg.joinChannel && o.channelId !== n.channelId) {
+      if (gvBusy.has(member.id)) return;
+      gvBusy.add(member.id);
+      try { await gvCreate(guild, member, cfg); } finally { gvBusy.delete(member.id); }
+    }
+  } catch (e) { console.error('gamevoice:', e.message); }
+}
+
+async function gvApply(guild, ch, room, name, emoji, seats) {
+  const uni = /^<a?:/.test(emoji || '') ? '' : (emoji || '');
+  await ch.setName(`${uni} ${name}`.trim().slice(0, 100), 'OPS: game voice');
+  await ch.setUserLimit(seats);
+  await ch.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: null }).catch(() => {});
+  room.chosen = true; dirty = true;
+  if (room.msg) client.rest.delete(Routes.channelMessage(ch.id, room.msg)).catch(() => {});
+  ch.send({ content: `🎮 تم اختيار **${name}** — المقاعد: ${seats}`, allowedMentions: { parse: [] } }).catch(() => {});
+}
+
+async function onGameVoiceInteraction(i) {
+  try {
+    const p = String(i.customId || '').split(':');
+    if (!i.guildId || !['gv', 'gvm'].includes(p[0])) return;
+    const isBtn = i.isButton(), isModal = i.isModalSubmit();
+    if (!isBtn && !isModal) return;
+    const [, act, gameId, chId] = p;
+    const guild = i.guild, cfg = gvCfg(guild.id);
+    const room = dbr('gvrooms', guild.id)[chId], ch = guild.channels.cache.get(chId);
+    const say2 = (t) => (i.deferred || i.replied ? i.editReply({ content: t }) : i.reply({ content: t, flags: 64 }));
+    if (!room || !ch) return void (await say2('⚠️ هذه الغرفة لم تعد موجودة.'));
+    if (room.owner !== i.user.id) return void (await say2('⚠️ الاختيار لصاحب الغرفة فقط.'));
+    if (room.chosen) return void (await say2('⚠️ تم تخصيص الروم مسبقاً.'));
+    const seatsModal = (id, title) => i.showModal({ custom_id: id, title: title.slice(0, 45), components: [
+      { type: 1, components: [{ type: 4, custom_id: 's', label: 'عدد المقاعد (1-99)', style: 1, required: true, max_length: 2 }] }] });
+
+    if (isBtn) {
+      if (act === 'o') {
+        if (!cfg.allowCustom) return void (await say2('⚠️ هذا الخيار غير متاح.'));
+        return void (await i.showModal({ custom_id: `gvm:o:0:${chId}`, title: 'لعبة مخصصة', components: [
+          { type: 1, components: [{ type: 4, custom_id: 'n', label: 'اسم اللعبة', style: 1, required: true, max_length: 60 }] },
+          { type: 1, components: [{ type: 4, custom_id: 's', label: 'عدد المقاعد (1-99)', style: 1, required: true, max_length: 2 }] }] }));
+      }
+      const g = cfg.games.find((x) => x.id === gameId);
+      if (!g) return void (await say2('⚠️ هذه اللعبة لم تعد متاحة.'));
+      if (g.fixed) {
+        await i.deferReply({ flags: 64 });
+        await gvApply(guild, ch, room, g.name, g.emoji, g.seats);
+        return void (await i.editReply({ content: '✅ تم تخصيص الروم.' }));
+      }
+      return void (await seatsModal(`gvm:s:${g.id}:${chId}`, g.name));
+    }
+    await i.deferReply({ flags: 64 });
+    const seats = parseInt(i.fields.getTextInputValue('s'), 10);
+    if (!(seats >= 1 && seats <= 99)) return void (await i.editReply({ content: 'اكتب رقم من 1 إلى 99.' }));
+    let name, emoji = '';
+    if (act === 'o') {
+      name = i.fields.getTextInputValue('n').trim();
+      if (!name) return void (await i.editReply({ content: 'اكتب اسم اللعبة.' }));
+    } else {
+      const g = cfg.games.find((x) => x.id === gameId);
+      if (!g) return void (await i.editReply({ content: '⚠️ هذه اللعبة لم تعد متاحة.' }));
+      name = g.name; emoji = g.emoji;
+    }
+    await gvApply(guild, ch, room, name, emoji, seats);
+    await i.editReply({ content: '✅ تم تخصيص الروم.' });
+  } catch (e) {
+    try { const t = '⚠️ تعذر التنفيذ: ' + discordMsg(e); if (i.deferred || i.replied) await i.editReply({ content: t }); else await i.reply({ content: t, flags: 64 }); } catch (_) {}
+  }
+}
 function ventCfg(gid) {
   const s = (db.settings[gid] || {}).vent || {};
   return {
@@ -4988,7 +5802,7 @@ const TK_DEF = {
   logEnabled: false, logChannel: null,
   ratingEnabled: false, ratingChannel: null, autoRating: false,
   askReason: true, mode: 'button',
-  panel: { title: '🎫 | قسم الدعم الفني والمساعدة', description: 'لفتح تذكرة اضغط على الزر بالأسفل.', image: '', channel: null, messageId: null },
+  panel: { title: '🎫 | قسم الدعم الفني والمساعدة', description: 'لفتح تذكرة اضغط على الزر بالأسفل.', image: '', channel: null, messageId: null, msgChannel: null, color: '#fbbf24' },
   options: [{ id: 'a1b2c3d4', name: 'دعم فني', emoji: '🎫', style: 'primary', message: 'يرجى انتظار مسؤولين التذكرة الرد عليك', image: '', roles: [] }],
 };
 const jcopy = (o) => JSON.parse(JSON.stringify(o));
@@ -5068,7 +5882,8 @@ function tkClean(b, gid) {
     autoRating: b.autoRating === true,
     askReason: b.askReason === true,
     mode: b.mode === 'select' ? 'select' : 'button',
-    panel: { title: str(p.title, 256), description: str(p.description, 4000), image: img(p.image), channel: chan(p.channel, [0, 5]), messageId: null },
+    panel: { title: str(p.title, 256), description: str(p.description, 4000), image: img(p.image), channel: chan(p.channel, [0, 5]), messageId: null,
+    color: COLOR_RE.test(String(p.color)) ? String(p.color).toLowerCase() : '#fbbf24' },
     options,
   };
   if (cfg.logEnabled && !cfg.logChannel) throw codeErr('bad_channel');
@@ -5094,6 +5909,7 @@ app.put('/api/guild/:id/tickets', auth, wrap(async (req, res) => {
   try { cfg = tkClean((req.body || {}).cfg, info.id); }
   catch (e) { if (e.code) return res.status(400).json({ error: e.code }); throw e; }
   cfg.panel.messageId = tkCfg(info.id).panel.messageId;
+  cfg.panel.msgChannel = tkCfg(info.id).panel.msgChannel;
   S(info.id).tickets = cfg;
   dirty = true;
   res.json({ ok: true });
@@ -5106,10 +5922,21 @@ app.post('/api/guild/:id/tickets/send', auth, wrap(async (req, res) => {
   const ch = cfg.panel.channel && cg.channels.cache.get(cfg.panel.channel);
   if (!ch) return res.status(400).json({ error: 'no_channel' });
   try {
-    const m = await tkPost(ch.id, tkPanelBody(cfg), cfg.panel.image);
-    S(info.id).tickets = { ...cfg, panel: { ...cfg.panel, messageId: m.id } };
+    const f = tkImgFile(cfg.panel.image);
+    const body = tkPanelBody(cfg);
+    let m = null, updated = false;
+    if (cfg.panel.messageId && cfg.panel.msgChannel === ch.id) {
+      try {
+        const pb = { ...body, attachments: f ? [{ id: 0, filename: f.name }] : [] };
+        m = await client.rest.patch(Routes.channelMessage(ch.id, cfg.panel.messageId),
+          f ? { body: pb, files: [{ name: f.name, data: f.data }] } : { body: pb });
+        updated = true;
+      } catch (_) { m = null; }
+    }
+    if (!m) m = await tkPost(ch.id, body, cfg.panel.image);
+    S(info.id).tickets = { ...cfg, panel: { ...cfg.panel, messageId: m.id, msgChannel: ch.id } };
     dirty = true;
-    res.json({ ok: true, url: `https://discord.com/channels/${info.id}/${ch.id}/${m.id}` });
+    res.json({ ok: true, updated, messageId: m.id, url: `https://discord.com/channels/${info.id}/${ch.id}/${m.id}` });
   } catch (e) { res.status(400).json({ error: 'discord_error', detail: discordMsg(e) }); }
 }));
 
@@ -5146,13 +5973,70 @@ app.get('/api/guild/:id/tickets/img/:name', auth, wrap(async (req, res) => {
   res.set({ 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
   res.sendFile(f);
 }));
+const tkEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+app.get('/api/guild/:id/tktranscripts', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res, { manage: true }); if (!info) return;
+  res.json({ list: Object.values(dbr('tkarchive', info.id)).sort((a, b) => b.at - a.at).slice(0, 300) });
+}));
+
+const tkView = (asText) => async (req, res) => {
+  if (!req.session.user) return res.redirect('/login');
+  const info = (await sharedGuilds(req)).find((g) => g.id === req.params.gid);
+  if (!info || !info.canManage || !/^[a-f0-9]{12}$/.test(req.params.tid)) return res.status(404).send('Not found');
+  let data;
+  try { data = JSON.parse(fs.readFileSync(path.join(TK_ARCH_DIR, info.id, req.params.tid + '.json'), 'utf8')); }
+  catch (_) { return res.status(404).send('Not found'); }
+  const { meta, msgs } = data;
+  const dt = (t) => new Date(t).toLocaleString('ar-EG', { timeZone: TZ, dateStyle: 'long', timeStyle: 'short' });
+  res.set('X-Content-Type-Options', 'nosniff');
+  if (asText) {
+    return res.type('text/plain; charset=utf-8').send(msgs.map((m) =>
+      `[${new Date(m.t).toISOString()}] ${m.a}: ${m.c}${m.att.length ? ' ' + m.att.join(' ') : ''}`).join('\n'));
+  }
+  const rows = msgs.map((m) => `
+    <div class="m"><img src="${tkEsc(m.av)}" alt=""><div class="mb">
+      <div class="h"><b class="${m.bot ? 'bot' : ''}">${tkEsc(m.a)}</b>${m.bot ? '<span class="tg">BOT</span>' : ''}<small>${tkEsc(dt(m.t))}</small></div>
+      ${m.c ? `<p>${tkEsc(m.c)}</p>` : ''}
+      ${m.emb.map((e) => `<div class="e">${e.t ? `<b>${tkEsc(e.t)}</b>` : ''}<p>${tkEsc(e.d)}</p></div>`).join('')}
+      ${m.att.filter((u) => /^https:\/\//.test(u)).map((u) => /\.(png|jpe?g|gif|webp)(\?|$)/i.test(u)
+        ? `<img class="at" src="${tkEsc(u)}" alt="">` : `<a href="${tkEsc(u)}" target="_blank" rel="noopener">${tkEsc(u)}</a>`).join('')}
+    </div></div>`).join('');
+  res.type('html').send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>${tkEsc(meta.name)}</title>
+<style>
+*{box-sizing:border-box;margin:0}body{font-family:"Segoe UI",Tahoma,sans-serif;background:linear-gradient(135deg,#150b24,#2a1740);color:#fff;min-height:100vh}
+header{position:sticky;top:0;padding:16px 24px;background:rgba(20,10,35,.92);border-bottom:1px solid #3b2557;display:flex;justify-content:space-between;align-items:center;gap:12px}
+header h1{font-size:1.3rem}header span{color:#b79ad6;font-size:.9rem}
+.wrap{max-width:900px;margin:0 auto;padding:20px 16px 40px}
+.m{display:flex;gap:14px;padding:10px 0}.m>img{width:44px;height:44px;border-radius:50%;flex:none}
+.h{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.h small{color:#8d7aa6}.bot{color:#a3c43a}
+.tg{background:#5865f2;border-radius:5px;padding:0 6px;font-size:.7rem}
+.mb p{white-space:pre-wrap;line-height:1.8;overflow-wrap:anywhere;margin-top:2px}
+.e{margin-top:6px;border-inline-start:4px solid #3b82f6;background:rgba(255,255,255,.06);border-radius:6px;padding:10px 14px}
+.at{max-width:320px;max-height:260px;border-radius:10px;margin-top:6px;display:block}
+.mb a{color:#8ab4ff;display:block;margin-top:4px;overflow-wrap:anywhere}
+.info{margin-top:30px;border-top:1px solid #3b2557;padding-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.info small{display:block;color:#b79ad6}.info b{overflow-wrap:anywhere}
+</style></head><body>
+<header><h1># ${tkEsc(meta.name)}</h1><span>${tkEsc(meta.count)} رسالة</span></header>
+<div class="wrap">${rows || '<p>لا توجد رسائل</p>'}
+<div class="info">
+<div><small>اسم التكت</small><b>#${tkEsc(meta.name)}</b></div>
+<div><small>فاتح التكت</small><b>${tkEsc(meta.ownerName)} (${tkEsc(meta.owner)})</b></div>
+<div><small>المستلم</small><b>${tkEsc(meta.claimerName || 'لم يستلمها احد')}</b></div>
+<div><small>حاذف التكت</small><b>${tkEsc(meta.closerName)}</b></div>
+<div><small>وقت الإغلاق</small><b>${tkEsc(dt(meta.at))}</b></div>
+</div></div></body></html>`);
+};
+app.get('/transcripts/:gid/:tid', wrap(tkView(false)));
+app.get('/transcripts/:gid/:tid/txt', wrap(tkView(true)));
 // ---------- بناء الرسائل ----------
 const tkEmoji = (e) => { const m = /^<(a?):(\w{1,32}):(\d{15,25})>$/.exec(e || ''); return m ? { id: m[3], name: m[2], animated: !!m[1] } : { name: e }; };
 
 function tkPanelBody(cfg) {
   const p = cfg.panel;
-  const embed = { color: 0xfbbf24, description: p.description || 'اضغط لفتح تذكرة.' };
+  const embed = { color: parseInt(String(p.color || '#fbbf24').slice(1), 16), description: p.description || 'اضغط لفتح تذكرة.' };
   if (p.title) embed.title = p.title;
   const pu = tkImgUrl(p.image);
   if (pu) embed.image = { url: pu };
@@ -5185,16 +6069,84 @@ const TK_MENU = [
   ['restart', 'Restart', 'إعادة تحميل القائمة'],
 ];
 // room.sa = تم طلب الدعم مسبقاً، فيتعطل الزر
-const tkControls = (room) => [
-  { type: 1, components: [
-    { type: 2, style: 2, custom_id: 'tk:support', label: 'طلب الدعم', emoji: { name: '🎧' }, disabled: !!(room && room.sa) },
-    { type: 2, style: 3, custom_id: 'tk:claim', label: 'استلام', emoji: { name: '🙋' } },
-    { type: 2, style: 4, custom_id: 'tk:close', label: 'غلق', emoji: { name: '🔒' } },
-  ] },
-  { type: 1, components: [{ type: 3, custom_id: 'tk:menu', placeholder: 'خيارات التكت', options: TK_MENU.map(([v, l, d]) => ({ label: l, value: v, description: d })) }] },
+const TK_EMO_OK = (v) => typeof v === 'string' && v.length <= 64 && (/^<a?:\w{1,32}:\d{15,25}>$/.test(v) || EMOJI_RE.test(v));
+const TK_EMO_ITEMS = [
+  ['b_support', 'زر طلب الدعم', '🎧'], ['b_claim', 'زر استلام', '🙋'], ['b_close', 'زر غلق', '🔒'],
+  ['b_delete', 'زر حذف التكت', '🗑️'], ['b_reopen', 'زر فتح تكت', '🔓'],
+  ['s_support', 'رسالة: طلب الدعم', '🆘'],
+    ['l_owner', 'سجل: صاحب التكت', '👤'], ['l_claimer', 'سجل: مستلم التذكرة', '🙋'], ['l_closer', 'سجل: الي قفل التكت', '🔒'],
+  ['l_num', 'سجل: رقم التكت', '🔢'], ['l_all', 'سجل: جميع الرسائل', '💬'], ['l_txt', 'سجل: رسائل التكت', '📄'],
+  ['m_come', 'Come', ''], ['m_add', 'Add', ''], ['m_remove', 'Remove', ''], ['m_rename', 'Rename', ''],
+  ['m_rating', 'Rating', ''], ['m_close', 'Close', ''], ['m_unclaim', 'Unclaim', ''], ['m_restart', 'Restart', ''],
 ];
+function tkEmojis(gid) {
+  const g = (gid && (db.settings[gid] || {}).tkEmojis) || {};
+  const src = db.tkEmojis && typeof db.tkEmojis === 'object' ? db.tkEmojis : {};
+  const ok = (v) => v === '' || TK_EMO_OK(v);
+  const o = {};
+  for (const [k, , def] of TK_EMO_ITEMS) {
+    o[k] = has(g, k) && ok(g[k]) ? g[k] : has(src, k) && ok(src[k]) ? src[k] : def;
+  }
+  return o;
+}
+const tkControls = (room, gid) => {
+  const E = tkEmojis(gid);
+  const em = (k) => (E[k] ? { emoji: tkEmoji(E[k]) } : {});
+  return [
+    { type: 1, components: [
+      { type: 2, style: 2, custom_id: 'tk:support', label: 'طلب الدعم', ...em('b_support'), disabled: !!(room && room.sa) },
+      { type: 2, style: 3, custom_id: 'tk:claim', label: 'استلام', ...em('b_claim') },
+      { type: 2, style: 4, custom_id: 'tk:close', label: 'غلق', ...em('b_close') },
+    ] },
+    { type: 1, components: [{ type: 3, custom_id: 'tk:menu', placeholder: 'خيارات التكت',
+      options: TK_MENU.map(([v, l, d]) => ({ label: l, value: v, description: d, ...em('m_' + v) })) }] },
+  ];
+};
 
-function tkTicketBody(room, user, ping) {
+app.get('/api/tkemojis', auth, (req, res) => {
+  res.json({ isOwner: OWNER_IDS.includes(req.session.user.id), emojis: tkEmojis(), items: TK_EMO_ITEMS.map(([k, l]) => [k, l]) });
+});
+app.put('/api/tkemojis', auth, (req, res) => {
+  if (!OWNER_IDS.includes(req.session.user.id)) return res.status(403).json({ error: 'forbidden' });
+  const { key, value } = req.body || {};
+  if (!TK_EMO_ITEMS.some((x) => x[0] === key)) return res.status(404).json({ error: 'not_found' });
+  db.tkEmojis = db.tkEmojis && typeof db.tkEmojis === 'object' ? db.tkEmojis : {};
+  const v = String(value == null ? '' : value).trim();
+  if (v !== '' && !TK_EMO_OK(v)) return res.status(400).json({ error: 'bad_emoji' });
+  db.tkEmojis[key] = v;
+  dirty = true;
+  res.json({ ok: true });
+});app.get('/api/cmdemojis', auth, (req, res) => {
+  res.json({ isOwner: OWNER_IDS.includes(req.session.user.id), emojis: cmdEmojis(), items: CMD_EMO_ITEMS.map(([k, l]) => [k, l]) });
+});
+app.put('/api/cmdemojis', auth, (req, res) => {
+  if (!OWNER_IDS.includes(req.session.user.id)) return res.status(403).json({ error: 'forbidden' });
+  const { key, value } = req.body || {};
+  if (!CMD_EMO_ITEMS.some((x) => x[0] === key)) return res.status(404).json({ error: 'not_found' });
+  const v = String(value == null ? '' : value).trim();
+  if (v !== '' && !TK_EMO_OK(v)) return res.status(400).json({ error: 'bad_emoji' });
+  db.cmdEmojis = db.cmdEmojis && typeof db.cmdEmojis === 'object' ? db.cmdEmojis : {};
+  db.cmdEmojis[key] = v;
+  dirty = true;
+  res.json({ ok: true });
+});
+app.get('/api/guild/:id/tkemojis', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res); if (!info) return;
+  res.json({ canManage: info.canManage, emojis: tkEmojis(info.id), items: TK_EMO_ITEMS.map(([k, l]) => [k, l]) });
+}));
+app.put('/api/guild/:id/tkemojis', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res, { manage: true }); if (!info) return;
+  const { key, value } = req.body || {};
+  if (!TK_EMO_ITEMS.some((x) => x[0] === key)) return res.status(404).json({ error: 'not_found' });
+  const v = String(value == null ? '' : value).trim();
+  if (v !== '' && !TK_EMO_OK(v)) return res.status(400).json({ error: 'bad_emoji' });
+  const s = S(info.id);
+  s.tkEmojis = s.tkEmojis || {};
+  s.tkEmojis[key] = v;
+  dirty = true;
+  res.json({ ok: true });
+}));
+function tkTicketBody(room, user, ping, gid) {
   const emb = {
     color: 0xfbbf24, title: room.snap.name,
     author: { name: user.globalName || user.username, icon_url: user.displayAvatarURL({ size: 64, extension: 'png' }) },
@@ -5203,7 +6155,7 @@ function tkTicketBody(room, user, ping) {
   if (room.snap.message) emb.description = room.snap.message;
   if (room.reason) emb.fields = [{ name: 'السبب', value: '```\n' + room.reason.replace(/```/g, "'''").slice(0, 900) + '\n```' }];
   if (room.snap.image) { const iu = tkImgUrl(room.snap.image); if (iu) emb.image = { url: iu }; }
-  const body = { embeds: [emb], components: tkControls(room), allowed_mentions: { parse: [] } };
+  const body = { embeds: [emb], components: tkControls(room, gid), allowed_mentions: { parse: [] } };
   if (ping) {
     body.content = [`<@${room.owner}>`, ...room.roles.map((r) => `<@&${r}>`)].join(' ');
     body.allowed_mentions = { users: [room.owner], roles: room.roles };
@@ -5254,7 +6206,7 @@ async function tkOpen(i, optId, reason) {
     };
     st.rooms[ch.id] = room;
     dirty = true;
-    const m = await tkPost(ch.id, tkTicketBody(room, i.user, true), room.snap.image);
+    const m = await tkPost(ch.id, tkTicketBody(room, i.user, true, guild.id), room.snap.image);
     room.msg = m.id;
     await reply(`✅ تم فتح تذكرتك: <#${ch.id}>`);
   } finally { tkBusy.delete(i.user.id); }
@@ -5274,7 +6226,43 @@ async function tkTranscript(ch) {
     `[${new Date(m.createdTimestamp).toISOString()}] ${m.author.tag}: ${m.content || (m.embeds.length ? '(إيمبد)' : '')}` +
     (m.attachments.size ? ' ' + [...m.attachments.values()].map((a) => a.url).join(' ') : '')).join('\n');
 }
-
+const TK_ARCH_DIR = path.resolve(DATA_DIR, 'ops-tkarchive');
+async function tkSnapshot(ch) {
+  const all = [];
+  let before;
+  for (let k = 0; k < 10; k++) {
+    const b = await ch.messages.fetch({ limit: 100, before }).catch(() => null);
+    if (!b || !b.size) break;
+    all.push(...b.values());
+    before = b.last().id;
+    if (b.size < 100) break;
+  }
+  return all.reverse().map((m) => ({
+    a: m.member ? m.member.displayName : m.author.username,
+    av: m.author.displayAvatarURL({ size: 64, extension: 'png' }),
+    bot: !!m.author.bot,
+    t: m.createdTimestamp,
+    c: m.content || '',
+    att: [...m.attachments.values()].map((x) => x.url),
+    emb: m.embeds.map((e) => ({ t: e.title || '', d: e.description || '' })).slice(0, 5),
+  }));
+}
+async function tkSave(guild, ch, room, closer) {
+  const msgs = await tkSnapshot(ch);
+  const id = crypto.randomBytes(6).toString('hex');
+  const nm = async (uid) => { if (!uid) return null; const u = await getUser(uid); return u ? (u.globalName || u.username) : uid; };
+  const meta = {
+    id, name: ch.name, type: room.snap.name, n: room.n, count: msgs.length, at: Date.now(), opened: room.at,
+    owner: room.owner, ownerName: await nm(room.owner),
+    claimer: room.claimer || null, claimerName: await nm(room.claimer),
+    closer: closer.id, closerName: closer.globalName || closer.username,
+  };
+  fs.mkdirSync(path.join(TK_ARCH_DIR, guild.id), { recursive: true });
+  fs.writeFileSync(path.join(TK_ARCH_DIR, guild.id, id + '.json'), JSON.stringify({ meta, msgs }));
+  dbk('tkarchive', guild.id)[id] = meta;
+  dirty = true;
+  return meta;
+}
 // غلق ناعم: يخفي التذكرة عن صاحبها ويغيّر اسمها، بدون حذف
 async function tkSoftClose(guild, ch, room, closer) {
   room.closed = true; room.closedBy = closer.id; dirty = true;
@@ -5282,8 +6270,8 @@ async function tkSoftClose(guild, ch, room, closer) {
   await ch.send({
     embeds: [{ color: 0x6b7280, description: '**يمكنك حذف او استرجاع تكت من هنا**' }],
     components: [{ type: 1, components: [
-      { type: 2, style: 4, custom_id: 'tk:delete', label: 'حذف التكت', emoji: { name: '🗑️' } },
-      { type: 2, style: 2, custom_id: 'tk:reopen', label: 'فتح تكت', emoji: { name: '🔓' } },
+      { type: 2, style: 4, custom_id: 'tk:delete', label: 'حذف التكت', ...(tkEmojis(guild.id).b_delete ? { emoji: tkEmoji(tkEmojis(guild.id).b_delete) } : {}) },
+      { type: 2, style: 2, custom_id: 'tk:reopen', label: 'فتح تكت', ...(tkEmojis(guild.id).b_reopen ? { emoji: tkEmoji(tkEmojis(guild.id).b_reopen) } : {}) },
     ] }],
   }).catch(() => {});
   // ديسكورد يحدّ تغيير اسم الروم (مرتين كل 10 دقايق)، فما نستنى
@@ -5301,26 +6289,34 @@ async function tkDelete(guild, ch, room, closer) {
   if (!st.rooms[ch.id]) return;
   delete st.rooms[ch.id];
   dirty = true;
+  let meta = null;
+  try { meta = await tkSave(guild, ch, room, closer); } catch (e) { console.error('[tkarchive]', e.message); }
   try {
     const lc = cfg.logEnabled && cfg.logChannel && guild.channels.cache.get(cfg.logChannel);
-    if (lc && typeof lc.send === 'function') {
-      const text = await tkTranscript(ch);
-      await lc.send({
-        embeds: [{
-          color: 0xef4444, title: '🔒 تذكرة مغلقة', timestamp: new Date().toISOString(),
-          fields: [
-            { name: 'التذكرة', value: `\`${ch.name}\``, inline: true },
-            { name: 'صاحبها', value: `<@${room.owner}>`, inline: true },
-            { name: 'أغلقها', value: `<@${closer.id}>`, inline: true },
-            { name: 'المستلم', value: room.claimer ? `<@${room.claimer}>` : '—', inline: true },
-            { name: 'النوع', value: room.snap.name, inline: true },
-          ],
-        }],
-        files: [{ attachment: Buffer.from(text || '(فارغ)', 'utf8'), name: `${ch.name}.txt` }],
-        allowedMentions: { parse: [] },
-      }).catch(() => {});
+    if (lc && typeof lc.send === 'function' && meta) {
+      let origin = '';
+      try { origin = new URL(REDIRECT_URI).origin; } catch (_) {}
+      const base = `${origin}/transcripts/${guild.id}/${meta.id}`;
+            const TE = tkEmojis(guild.id);
+      const te = (k) => (TE[k] ? TE[k] + ' ' : '');
+      await client.rest.post(Routes.channelMessages(lc.id), { body: {
+        flags: 1 << 15, allowed_mentions: { parse: [] },
+        components: [{ type: 17, accent_color: 0xef4444, components: [
+          { type: 10, content: `## سجل التكت رقم ${ch.name}` },
+          { type: 10, content: [
+            `${te('l_owner')}**صاحب التكت :** <@${room.owner}>`,
+            `${te('l_claimer')}**مستلم التذكرة :** ${room.claimer ? `<@${room.claimer}>` : 'لم يستلمها احد'}`,
+            `${te('l_closer')}**الي قفل التكت :** <@${closer.id}>`,
+            `${te('l_num')}**رقم التكت :** #${ch.name}`,
+            `${te('l_all')}**جميع الرسائل الي داخل التكت :** [اضغط هنا](${base})`,
+            `${te('l_txt')}**رسائل التكت :** [اضغط هنا](${base}/txt)`,
+          ].join('\n\n') },
+          { type: 10, content: `-# <t:${Math.floor(Date.now() / 1000)}:f>` },
+          ...(SUPPORT_URL ? [{ type: 1, components: [{ type: 2, style: 5, label: 'الدعم الفني', url: SUPPORT_URL }] }] : []),
+        ] }],
+      } });
     }
-  } catch (_) {}
+  } catch (e) { console.error('[tklog]', e.message); }
   setTimeout(() => ch.delete('OPS: ticket deleted').catch(() => {}), 3000);
 }
 
@@ -5331,8 +6327,8 @@ async function onTicketInteraction(i) {
     if (!/^tk[pmur]?:/.test(cid)) return;
     const [kind, a, b, x3] = cid.split(':');
     const ephem = (t) => (i.deferred || i.replied
-      ? i.editReply({ content: t })
-      : i.reply({ content: t, flags: 64, allowedMentions: { parse: [] } }));
+      ? i.editReply({ content: '', flags: 1 << 15, components: v2Comps(t) })
+      : i.reply({ flags: 64 | (1 << 15), components: v2Comps(t), allowedMentions: { parse: [] } }));
 
     // التقييم (يشتغل بالخاص وبالسيرفر)
     if (kind === 'tkr') {
@@ -5393,7 +6389,7 @@ async function onTicketInteraction(i) {
     let act;
     if (kind === 'tk') {
       act = i.isStringSelectMenu() ? i.values[0] : a;
-      if (i.isStringSelectMenu()) i.message.edit({ components: tkControls(room) }).catch(() => {});
+      if (i.isStringSelectMenu() && act !== 'restart') i.message.edit({ components: tkControls(room, i.guildId) }).catch(() => {});
     } else if (kind === 'tku') act = 'u:' + a;
     else if (kind === 'tkm') act = 'm:' + a;
     else return;
@@ -5456,12 +6452,12 @@ async function onTicketInteraction(i) {
       case 'support': {
         if (room.sa) return void (await ephem('⚠️ تم طلب الدعم الفني مسبقاً.'));
         room.sa = true; dirty = true;
-        i.message.edit({ components: tkControls(room) }).catch(() => {}); // يعطّل الزر للجميع
+        i.message.edit({ components: tkControls(room, i.guildId) }).catch(() => {}); // يعطّل الزر للجميع
         const pings = room.roles.map((r) => `<@&${r}>`).join(' ');
-        return void (await i.reply({
-          content: `🆘 طلب الدعم الفني | ${pings || (room.claimer ? `<@${room.claimer}>` : '')}`.trim(),
-          allowedMentions: { roles: room.roles, users: room.claimer ? [room.claimer] : [] },
-        }));
+        await i.deferUpdate().catch(() => {});
+        return void tkSend(ch.id,
+          `${tkEmojis(guild.id).s_support ? tkEmojis(guild.id).s_support + ' ' : ''}طلب الدعم الفني | ${pings || (room.claimer ? `<@${room.claimer}>` : '')}`.trim(),
+          { roles: room.roles, users: room.claimer ? [room.claimer] : [] });
       }
       case 'come': {
         await i.reply({ content: `📢 <@${room.owner}> الدعم يستدعيك للتذكرة.`, allowedMentions: { users: [room.owner] } });
@@ -5528,16 +6524,10 @@ async function onTicketInteraction(i) {
         room.closed = false; dirty = true;
         await ch.permissionOverwrites.edit(room.owner, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true, AttachFiles: true, EmbedLinks: true }).catch(() => {});
         ch.setName(`ticket-${String(room.n).padStart(4, '0')}`, 'OPS: ticket reopened').catch(() => {});
-        return void ch.send({ content: `<@${room.owner}> تم إعادة فتح تذكرتك.`, allowedMentions: { users: [room.owner] } }).catch(() => {});
+        return void tkSend(ch.id, `<@${room.owner}> تم إعادة فتح تذكرتك.`, { users: [room.owner] });
       }
-      case 'restart': {
-        await i.deferReply({ flags: 64 });
-        if (room.msg) client.rest.delete(Routes.channelMessage(ch.id, room.msg)).catch(() => {});
-        const owner = await client.users.fetch(room.owner).catch(() => i.user);
-        const m = await tkPost(ch.id, tkTicketBody(room, owner, false), room.snap.image);
-        room.msg = m.id; dirty = true;
-        return void (await i.editReply({ content: '✅ تمت إعادة تحميل القائمة.' }));
-      }
+      case 'restart':
+        return void (await i.deferUpdate().catch(() => {}));
     }
   } catch (e) {
     try {
@@ -5547,6 +6537,329 @@ async function onTicketInteraction(i) {
   }
 }
 // ===================== القسم الجديد =====================
+// ===================== اختصارات التذاكر (بريميوم) =====================
+const TK_SHORT_ITEMS = [
+  ['claim', 'استلام التذكرة', 'يستلم التذكرة بدل زر «استلام»'],
+  ['unclaim', 'إلغاء الاستلام', 'يلغي استلام التذكرة'],
+  ['close', 'غلق التذكرة', 'يغلق التذكرة بدل زر «غلق»'],
+  ['delete', 'حذف التذكرة', 'يحذف التذكرة نهائياً مع السجل'],
+  ['reopen', 'فتح التذكرة مجدداً', 'يعيد فتح تذكرة مغلقة'],
+  ['support', 'طلب الدعم', 'يمنشن رتب الدعم'],
+  ['come', 'استدعاء صاحب التذكرة', 'يستدعي صاحب التذكرة'],
+  ['rename', 'تغيير الاسم', 'الاختصار + الاسم الجديد'],
+  ['rating', 'طلب التقييم', 'يرسل التقييم لصاحب التذكرة'],
+  ['add', 'إضافة عضو', 'الاختصار + @عضو'],
+  ['remove', 'إزالة عضو', 'الاختصار + @عضو'],
+];function tkNormWord(raw) {
+  const a = String(raw || '')
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '')
+    .trim()
+    .toLowerCase();
+  if (!a || a.length > 20 || /[\s@<>]/.test(a)) return null;
+  return a;
+}function tkV2(content, allowed) {
+  return {
+    flags: 1 << 15,
+    allowed_mentions: allowed || { parse: [] },
+    components: [{ type: 17, components: [{ type: 10, content: applyEmo(content).slice(0, 4000) }] }],
+  };
+}
+const tkSend = (chId, content, allowed) =>
+  client.rest.post(Routes.channelMessages(chId), { body: tkV2(content, allowed) }).catch(() => null);
+const tkReply = (msg, content) =>
+  client.rest.post(Routes.channelMessages(msg.channelId), {
+    body: { ...tkV2(content), message_reference: { message_id: msg.id, fail_if_not_exists: false } },
+  }).catch(() => null);
+function tkShortCfg(gid) {
+  const s = ((db.settings[gid] || {}).tkshort) || {};
+  const o = {};
+  for (const [k] of TK_SHORT_ITEMS) o[k] = tkNormWord(s[k]) || '';
+  return o;
+}
+
+app.get('/api/guild/:id/tkshort', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res); if (!info) return;
+  res.json({
+    canManage: info.canManage, guildPremium: isPremium(info.id),
+    items: TK_SHORT_ITEMS, words: tkShortCfg(info.id), emojis: tkEmojis(info.id),
+  });
+}));
+
+app.put('/api/guild/:id/tkshort', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res, { manage: true }); if (!info) return;
+  if (!isPremium(info.id)) return res.status(403).json({ error: 'premium_required' });
+  const { key, value } = req.body || {};
+  if (!TK_SHORT_ITEMS.some((x) => x[0] === key)) return res.status(404).json({ error: 'not_found' });
+  const v = String(value == null ? '' : value).trim();
+  let w = '';
+  if (v) {
+        console.log('[tkshort]', JSON.stringify(v), [...v].map((c) => c.codePointAt(0).toString(16)));
+    w = tkNormWord(v);
+    if (!w) return res.status(400).json({ error: 'bad_tkword' });
+    if ([...w].length < 3) return res.status(400).json({ error: 'short_alias' });
+    const cur = tkShortCfg(info.id);
+    if (TK_SHORT_ITEMS.some(([k]) => k !== key && cur[k] === w)) return res.status(400).json({ error: 'alias_taken', detail: w });
+  }
+  const s = S(info.id);
+  s.tkshort = s.tkshort || {};
+  s.tkshort[key] = w;
+  dirty = true;
+  res.json({ ok: true });
+}));
+
+async function onTicketShortcut(msg) {
+  if (!msg.guildId || !msg.author || msg.author.bot || msg.webhookId || !msg.content) return;
+  const st = db.tickets && db.tickets[msg.guildId];
+  const room = st && st.rooms && st.rooms[msg.channelId];
+  if (!room || !isPremium(msg.guildId)) return;
+  const words = msg.content.trim().split(/\s+/);
+  const word = words[0].toLowerCase();
+  const map = tkShortCfg(msg.guildId);
+  const act = TK_SHORT_ITEMS.map((x) => x[0]).find((k) => map[k] && map[k] === word);
+  if (!act) return;
+
+  const guild = msg.guild, ch = msg.channel;
+  const member = msg.member || (await guild.members.fetch(msg.author.id).catch(() => null));
+  if (!member) return;
+  const isAdmin = member.permissions.has(PermissionFlagsBits.ManageGuild);
+  const staff = isAdmin || room.roles.some((r) => member.roles.cache.has(r));
+  const isOwner = room.owner === msg.author.id;
+  const reply = (t) => tkReply(msg, t);
+  try {
+    if (room.closed && !['delete', 'reopen'].includes(act)) return void (await reply('🔒 هذه التذكرة مغلقة.'));
+    if (act === 'close') {
+      if (!staff && !isOwner) return void (await reply('⚠️ بس صاحب التذكرة أو الدعم يقدروا يغلقوها.'));
+      return void (await tkSoftClose(guild, ch, room, msg.author));
+    }
+    if (!staff) return void (await reply('⚠️ هذا الاختصار لرتب الدعم فقط.'));
+
+    switch (act) {
+      case 'claim':
+        if (isOwner) return void (await reply('❌ لا يمكنك استلام تذكرتك الخاصة.'));
+        if (room.claimer === msg.author.id) return void (await reply('⚠️ أنت مستلم هذه التذكرة أصلاً.'));
+        if (room.claimer) return void (await reply(`⚠️ التذكرة مستلمة من <@${room.claimer}>`));
+        room.claimer = msg.author.id; dirty = true;
+        return void tkSend(ch.id, `🙋 <@${msg.author.id}> استلم التذكرة <@${room.owner}>`, { users: [msg.author.id, room.owner] });
+      case 'unclaim':
+        if (!room.claimer) return void (await reply('التذكرة مو مستلمة.'));
+        if (room.claimer !== msg.author.id && !isAdmin) return void (await reply('⚠️ بس المستلم أو الإدارة يقدروا يلغوا الاستلام.'));
+        room.claimer = null; dirty = true;
+        return void tkSend(ch.id, `❌ <@${msg.author.id}> ألغى استلام التذكرة.`);
+      case 'delete':
+        return void (await tkDelete(guild, ch, room, msg.author));
+      case 'reopen':
+        if (!room.closed) return void (await reply('التذكرة مفتوحة أصلاً.'));
+        room.closed = false; dirty = true;
+        await ch.permissionOverwrites.edit(room.owner, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true, AttachFiles: true, EmbedLinks: true }).catch(() => {});
+        ch.setName(`ticket-${String(room.n).padStart(4, '0')}`, 'OPS: ticket reopened').catch(() => {});
+        return void tkSend(ch.id, `<@${room.owner}> تم إعادة فتح تذكرتك.`, { users: [room.owner] });
+      case 'support':
+        if (room.sa) return void (await reply('⚠️ تم طلب الدعم الفني مسبقاً.'));
+        room.sa = true; dirty = true;
+        if (room.msg) ch.messages.fetch(room.msg).then((m) => m.edit({ components: tkControls(room, guild.id) })).catch(() => {});
+        return void tkSend(ch.id,
+          `${tkEmojis(guild.id).s_support ? tkEmojis(guild.id).s_support + ' ' : ''}طلب الدعم الفني | ${room.roles.map((r) => `<@&${r}>`).join(' ')}`.trim(),
+          { roles: room.roles });
+      case 'come':
+        if (isOwner) return void (await reply('❌ لا يمكن لصاحب التذكرة استخدام أمر الاستدعاء.'));
+        tkSend(ch.id, `📢 <@${room.owner}> الدعم يستدعيك للتذكرة.`, { users: [room.owner] });
+        return void client.users.fetch(room.owner).then((u) => u.send(`📢 الدعم يستدعيك بسيرفر **${guild.name}**: https://discord.com/channels/${guild.id}/${ch.id}`)).catch(() => {});
+      case 'rename': {
+        const v = words.slice(1).join('-').toLowerCase().slice(0, 100);
+        if (!v) return void (await reply('الاستخدام: الاختصار + الاسم الجديد'));
+        await ch.setName(v, 'OPS: ticket rename');
+        return void (await reply('✅ تم تغيير الاسم.'));
+      }
+      case 'rating': {
+        const cfg = tkCfg(guild.id);
+        if (room.claimer !== msg.author.id) return void (await reply('⚠️ يجب أن تكون مستلم هذه التذكرة.'));
+        if (!cfg.ratingEnabled || !cfg.ratingChannel) return void (await reply('⚠️ فعّل التقييمات من الداشبورد أولاً.'));
+        return void ch.send({ content: `<@${room.owner}>`, ...tkRatingBody(guild, room), allowedMentions: { users: [room.owner] } });
+      }
+      case 'add': case 'remove': {
+        const t = msg.mentions.users.first();
+        const raw = String(words[1] || '').replace(/[<@!>]/g, '');
+        const uid = t ? t.id : (SNOW.test(raw) ? raw : null);
+        if (!uid) return void (await reply('الاستخدام: الاختصار + @عضو'));
+        if (act === 'add') {
+          await ch.permissionOverwrites.edit(uid, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true, AttachFiles: true });
+          return void tkSend(ch.id, `➕ <@${msg.author.id}> أضاف <@${uid}> للتذكرة.`, { users: [uid] });
+        }
+        if (uid === room.owner) return void (await reply('⚠️ ما بتقدر تشيل صاحب التذكرة.'));
+        await ch.permissionOverwrites.delete(uid);
+        return void tkSend(ch.id, `➖ <@${msg.author.id}> شال <@${uid}> من التذكرة.`);
+      }
+    }
+  } catch (e) { reply('⚠️ تعذر التنفيذ: ' + discordMsg(e)); }
+}
+// ===================== نظام التقديم =====================
+const AP_MAX_Q = 5; // حد ديسكورد للمودال
+const apLimit = (gid) => (isPremium(gid) ? 10 : 1);
+const apForms = (gid) => arr(((db.settings[gid] || {}).apply || {}).forms).filter((f) => f && f.id);
+
+function apClean(list, gid) {
+  if (!Array.isArray(list)) throw codeErr('bad_value');
+  if (list.length > apLimit(gid)) throw codeErr(isPremium(gid) ? 'limit_reached' : 'premium_required');
+  const cg = client.guilds.cache.get(gid);
+  const chans = new Set(textChannels(gid).map((c) => c.id));
+  const str = (v, max) => { const t = v == null ? '' : String(v).trim(); if (t.length > max) throw codeErr('bad_text'); return t; };
+  const chan = (v) => { if (!v) return null; if (!chans.has(String(v))) throw codeErr('bad_channel'); return String(v); };
+  const role = (v) => {
+    if (!v) return null;
+    const r = cg && cg.roles.cache.get(String(v));
+    if (!r || r.id === gid || r.managed) throw codeErr('bad_role');
+    if (DANGER_PERMS.some((p) => r.permissions.has(PermissionFlagsBits[p]))) throw codeErr('role_dangerous');
+    return r.id;
+  };
+  const act = (a) => {
+    a = a || {};
+    const roleOn = a.roleOn === true;
+    const rid = roleOn ? role(a.role) : null;
+    if (roleOn && !rid) throw codeErr('bad_role');
+    return { dm: a.dm === true, dmText: str(a.dmText, 1000), roleOn, role: rid };
+  };
+  const seen = new Set();
+  return list.map((f) => {
+    f = f || {};
+    let id = String(f.id || '');
+    if (!/^[a-f0-9]{6,16}$/.test(id) || seen.has(id)) id = newId();
+    seen.add(id);
+    const name = str(f.name, 60);
+    if (!name) throw codeErr('bad_name');
+    const qs = arr(f.questions);
+    if (qs.length < 1 || qs.length > AP_MAX_Q) throw codeErr('bad_questions');
+    const cd = parseInt(f.cooldown, 10);
+    if (!(cd >= 0 && cd <= 3600)) throw codeErr('bad_value');
+    return {
+      id, name, enabled: f.enabled !== false,
+      channel: chan(f.channel), logChannel: chan(f.logChannel),
+      description: str(f.description, 2000), cooldown: cd,
+      questions: qs.map((q) => {
+        const text = str(q && q.text, 200);
+        if (!text) throw codeErr('bad_questions');
+        return { text, long: !!(q && q.long), required: !(q && q.required === false) };
+      }),
+      accept: act(f.accept), reject: act(f.reject),
+      reviewerRoles: [...new Set(arr(f.reviewerRoles).map(String))].filter((x) => x !== gid && cg.roles.cache.has(x)).slice(0, 25),
+    };
+  });
+}
+
+app.get('/api/guild/:id/apply', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res); if (!info) return;
+  res.json({ canManage: info.canManage, guildPremium: isPremium(info.id), max: apLimit(info.id), roles: roleList(info.id), channels: textChannels(info.id), forms: apForms(info.id) });
+}));
+
+app.put('/api/guild/:id/apply', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res, { manage: true }); if (!info) return;
+  let forms;
+  try { forms = apClean((req.body || {}).forms, info.id); }
+  catch (e) { if (e.code) return res.status(400).json({ error: e.code }); throw e; }
+  const old = apForms(info.id);
+  forms.forEach((f) => { const o = old.find((x) => x.id === f.id); f.messageId = o ? o.messageId || null : null; });
+  S(info.id).apply = { forms };
+  dirty = true;
+  res.json({ ok: true, forms });
+}));
+
+app.post('/api/guild/:id/apply/:fid/send', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res, { manage: true }); if (!info) return;
+  const f = apForms(info.id).find((x) => x.id === req.params.fid);
+  if (!f) return res.status(404).json({ error: 'not_found' });
+  if (!f.channel) return res.status(400).json({ error: 'no_channel' });
+  if (!f.logChannel) return res.status(400).json({ error: 'no_log' });
+  if (!client.guilds.cache.get(info.id).channels.cache.has(f.channel)) return res.status(400).json({ error: 'bad_channel' });
+  try {
+    const m = await client.rest.post(Routes.channelMessages(f.channel), { body: {
+      embeds: [{ color: 0xffffff, title: f.name, description: f.description || 'اضغط على الزر بالأسفل للتقديم.' }],
+      components: [{ type: 1, components: [{ type: 2, style: 3, custom_id: `ap:s:${f.id}`, label: 'تقديم', emoji: { name: '📝' } }] }],
+      allowed_mentions: { parse: [] },
+    } });
+    f.messageId = m.id; dirty = true;
+    res.json({ ok: true, url: `https://discord.com/channels/${info.id}/${f.channel}/${m.id}` });
+  } catch (e) { res.status(400).json({ error: 'discord_error', detail: discordMsg(e) }); }
+}));
+
+// ---- التفاعلات: زر تقديم → مودال → إرسال للسجل → قبول/رفض ----
+async function onApplyInteraction(i) {
+  try {
+    const cid = String(i.customId || '');
+    if (!i.guildId || !/^ap[ma]?:/.test(cid)) return;
+    const parts = cid.split(':'), kind = parts[0], gid = i.guildId;
+    const forms = apForms(gid);
+    const idx = forms.findIndex((x) => x.id === (kind === 'apm' ? parts[1] : parts[2]));
+    const f = forms[idx];
+    const no = (t) => i.reply({ content: t, flags: 64 });
+    if (!f) return void (await no('⚠️ هذا النموذج لم يعد متاحاً.'));
+
+    if (kind === 'apa') {
+      const mem = i.member;
+      const ok = mem.permissions.has(PermissionFlagsBits.ManageGuild) || f.reviewerRoles.some((r) => mem.roles.cache.has(r));
+      if (!ok) return void (await no('⚠️ ما عندك صلاحية مراجعة الطلبات.'));
+      const subs = dbk('applysubs', gid), sub = subs[parts[3]];
+      if (!sub || sub.done) return void (await no('⚠️ هذا الطلب تمت معالجته.'));
+      sub.done = true; dirty = true;
+      const accept = parts[1] === 'a', a = accept ? f.accept : f.reject;
+      const e = EmbedBuilder.from(i.message.embeds[0]).setColor(accept ? 0x22c55e : 0xef4444)
+        .setFooter({ text: `${accept ? 'تم القبول' : 'تم الرفض'} بواسطة ${i.user.username}` });
+      await i.update({ embeds: [e], components: [] });
+      const u = await client.users.fetch(sub.user).catch(() => null);
+      if (a.dm && a.dmText && u) u.send(tpl(a.dmText, { user: u.globalName || u.username, server: i.guild.name })).catch(() => {});
+      if (a.roleOn && a.role) {
+        const m = await i.guild.members.fetch(sub.user).catch(() => null);
+        const role = i.guild.roles.cache.get(a.role);
+        if (m && role && role.editable) await m.roles.add(role.id, 'OPS: apply').catch(() => {});
+      }
+      return;
+    }
+
+    if (!f.enabled || (idx > 0 && !isPremium(gid))) return void (await no('⚠️ التقديم غير متاح حالياً.'));
+    const cdk = `${f.id}:${i.user.id}`, cds = dbk('applycd', gid);
+
+    if (kind === 'ap') {
+      const left = (cds[cdk] || 0) + f.cooldown * 1000 - Date.now();
+      if (left > 0) return void (await no(`⏳ تقدر تقدّم مرة ثانية ${ts(Date.now() + left, 'R')}`));
+      return void (await i.showModal({
+        custom_id: `apm:${f.id}`, title: f.name.slice(0, 45),
+        components: f.questions.map((q, n) => ({ type: 1, components: [{
+          type: 4, custom_id: 'q' + n, label: q.text.slice(0, 45), style: q.long ? 2 : 1, required: q.required,
+          max_length: q.long ? 1000 : 300, placeholder: q.text.length > 45 ? q.text.slice(0, 100) : undefined,
+        }] })),
+      }));
+    }
+
+    if (kind === 'apm') {
+      await i.deferReply({ flags: 64 });
+      const left = (cds[cdk] || 0) + f.cooldown * 1000 - Date.now();
+      if (left > 0) return void (await i.editReply({ content: '⏳ لازم تستنى شوي قبل التقديم مرة ثانية.' }));
+      const lc = i.guild.channels.cache.get(f.logChannel);
+      if (!lc || typeof lc.send !== 'function') return void (await i.editReply({ content: '⚠️ روم السجلات غير محدد.' }));
+      const subId = newId();
+      const emb = {
+        color: 0xffffff, title: '📝 طلب تقديم جديد', timestamp: new Date().toISOString(),
+        description: `**النموذج:** ${f.name}\n**المتقدم:** <@${i.user.id}>`,
+        thumbnail: { url: i.user.displayAvatarURL({ size: 128, extension: 'png' }) },
+        fields: f.questions.map((q, n) => ({ name: cut(q.text, 250), value: cut(i.fields.getTextInputValue('q' + n) || '—', 1000) })),
+      };
+      await lc.send({
+        embeds: [emb],
+        components: [{ type: 1, components: [
+          { type: 2, style: 3, custom_id: `apa:a:${f.id}:${subId}`, label: 'قبول', emoji: { name: '✅' } },
+          { type: 2, style: 4, custom_id: `apa:r:${f.id}:${subId}`, label: 'رفض', emoji: { name: '❌' } },
+        ] }],
+        allowedMentions: { parse: [] },
+      });
+      dbk('applysubs', gid)[subId] = { user: i.user.id, form: f.id, at: Date.now(), done: false };
+      cds[cdk] = Date.now(); dirty = true;
+      await i.editReply({ content: '✅ تم إرسال طلبك، استنى الرد.' });
+    }
+  } catch (e) {
+    try {
+      const t = '⚠️ تعذر التنفيذ: ' + discordMsg(e);
+      if (i.deferred || i.replied) await i.editReply({ content: t }); else await i.reply({ content: t, flags: 64 });
+    } catch (_) {}
+  }
+}
 function mysecCfg(gid) {
   const s = (db.settings[gid] || {}).mysec || {};
   return { enabled: !!s.enabled };
@@ -5568,37 +6881,66 @@ res.json({ ok: true });
 
 }));// ===================== نظام العملات (RT Coin) =====================
 const ECO_VIP_ROLE = '1544858160982917261'; // رتبة المكافأة المميزة (غيّرها لرتبتك)
-const ECO_ADMIN_GUILDS = ['1544077828151054537', '1537751084171272213']; // السيرفرات اللي فيها اعطي/سحب
+const ECO_ADMIN_GUILDS = ['1544077828151054537', '1537751084171272213','1545572112134312027','1555688842357374976']; // السيرفرات اللي فيها اعطي/سحب
 const ecoLimit = (gid) => (isPremium(gid) ? 5 : 1);
 const ecoPending = new Map();
 setInterval(() => { const c = Date.now() - 120000; for (const [k, v] of ecoPending) if (v.at < c) ecoPending.delete(k); }, 60000);
 
 function ecoCfg(gid) {
   const s = (db.settings[gid] || {}).economy || {};
+  const prem = isPremium(gid);
+  const em = typeof s.emoji === 'string' ? s.emoji.trim() : '';
   return {
     enabled: !!s.enabled,
-    currencyName: isPremium(gid) && typeof s.currencyName === 'string' && s.currencyName.trim() && s.currencyName.trim() !== 'RT' ? s.currencyName.trim().slice(0, 20) : 'OPS',
+    currencyName: prem && typeof s.currencyName === 'string' && s.currencyName.trim() && s.currencyName.trim() !== 'RT' ? s.currencyName.trim().slice(0, 20) : 'OPS',
     channels: [...new Set(arr(s.channels).map(String).filter((x) => SNOW.test(x)))].slice(0, ecoLimit(gid)),
     role: SNOW.test(String(s.role || '')) ? String(s.role) : null,
+    emoji: prem && em && em.length <= 64 ? em : '',
+    vipIds: prem ? [...new Set(arr(s.vipIds).map(String).filter((x) => SNOW.test(x)))].slice(0, 50) : [],
   };
 }
 const ecoUser = (gid, uid) => { const g = dbk('economy', gid); return g[uid] || (g[uid] = { balance: 0, lastDaily: 0 }); };
 const SUPPORT_GID = '1537751084171272213';
-function ecoLog(gid, uid, amt, src) {
+function ecoLog(gid, uid, amt, src, other) {
   const g = dbk('ecolog', gid);
   const l = g[uid] || (g[uid] = []);
-  l.push({ amt, src, at: Date.now() });
+  l.push({ amt, src, at: Date.now(), other: other || null });
   if (l.length > 500) l.shift();
   dirty = true;
 }
-app.get('/api/me/transactions', auth, (req, res) => {
+app.get('/api/me/transactions', auth, wrap(async (req, res) => {
   const uid = req.session.user.id;
-  const bal = Number((dbr('economy', SUPPORT_GID)[uid] || {}).balance) || 0;
-  const list = arr(dbr('ecolog', SUPPORT_GID)[uid]).slice().reverse();
-  let dep = 0, wd = 0;
-  for (const x of list) { if (x.amt > 0) dep += x.amt; else wd += -x.amt; }
-  res.json({ balance: bal, deposits: dep, withdrawals: wd, count: list.length, list: list.slice(0, 200) });
-});
+  const myName = req.session.user.name;
+  const rows = [];
+  for (const [gid, users] of Object.entries(db.ecolog || {})) {
+    const l = arr(users[uid]);
+    if (!l.length) continue;
+    const cg = client && client.guilds.cache.get(gid);
+    const guild = cg ? cg.name : 'سيرفر غير معروف';
+    const cur = ecoCfg(gid).currencyName;
+    for (const x of l) rows.push({ ...x, gid, guild, cur });
+  }
+  rows.sort((a, b) => b.at - a.at);
+  const top = rows.slice(0, 500);
+  const ids = [...new Set(top.map((x) => x.other).filter(Boolean))];
+  const names = {};
+  await Promise.all(ids.map(async (id) => {
+    const u = await getUser(id);
+    names[id] = u ? u.globalName || u.username : 'مستخدم غير معروف';
+  }));
+  const reason = (x) => {
+    const on = x.other ? names[x.other] : null;
+    if (x.src === 'daily') return 'المكافأة اليومية';
+    if (x.src === 'transfer') return x.amt < 0 ? `حوالة من ${myName} إلى ${on || 'مستخدم'}` : `حوالة من ${on || 'مستخدم'} إلى ${myName}`;
+    if (x.src === 'admin') return (x.amt > 0 ? 'إضافة رصيد من الإدارة' : 'سحب رصيد بواسطة الإدارة') + (on ? ` (${on})` : '');
+    if (x.src === 'premium') return 'اشتراك OPS Premium للسيرفر';
+    return 'عملية';
+  };
+  res.json({
+    count: top.length,
+    list: top.map((x) => ({ amt: x.amt, at: x.at, src: x.src, gid: x.gid, guild: x.guild, cur: x.cur, reason: reason(x) })),
+  });
+}));
 function ecoParse(v) {
   const m = /^(\d+(?:\.\d+)?)([kmbt])?$/.exec(String(v || '').trim().toLowerCase().replace(/,/g, ''));
   if (!m) return NaN;
@@ -5631,7 +6973,21 @@ app.put('/api/guild/:id/economy', auth, wrap(async (req, res) => {
     if (!roleList(info.id).some((r) => r.id === b.role)) return res.status(400).json({ error: 'bad_role' });
     role = b.role;
   }
-  S(info.id).economy = { enabled: b.enabled === true, currencyName: name, channels: [...new Set(b.channels)], role };
+    let emoji = '';
+  if (b.emoji) {
+    if (!isPremium(info.id)) return res.status(403).json({ error: 'premium_required' });
+    const t = String(b.emoji).trim();
+    const okE = /^<a?:\w{1,32}:\d{15,25}>$/.test(t) || (EMOJI_RE.test(t) && t.length <= 16);
+    if (!okE) return res.status(400).json({ error: 'bad_emoji' });
+    emoji = t;
+  }
+  let vipIds = [];
+  if (Array.isArray(b.vipIds) && b.vipIds.length) {
+    if (!isPremium(info.id)) return res.status(403).json({ error: 'premium_required' });
+    if (b.vipIds.length > 50 || !b.vipIds.every((x) => typeof x === 'string' && SNOW.test(x))) return res.status(400).json({ error: 'bad_user_id' });
+    vipIds = [...new Set(b.vipIds)];
+  }
+  S(info.id).economy = { enabled: b.enabled === true, currencyName: name, channels: [...new Set(b.channels)], role, emoji, vipIds };
   dirty = true;
   res.json({ ok: true });
 }));
@@ -5642,6 +6998,11 @@ app.get('/api/guild/:id/economy/top', auth, wrap(async (req, res) => {
   let rows;
   if (type === 'xp') rows = Object.entries((db.guilds[info.id] || { members: {} }).members).map(([id, m]) => [id, m.xp || 0]);
   else rows = Object.entries(dbr('economy', info.id)).map(([id, u]) => [id, Number(u.balance) || 0]);
+    
+  console.log('[eco-top] guild=', info.id, 'type=', type, 'rows=', rows.length);
+    console.log('[eco-top] pid=', process.pid, 'guild=', info.id, 'file=', DB_PATH, 'users=', rows.length);
+      console.log('[eco-top] pid=', process.pid, 'file=', DB_PATH, 'guild=', info.id);
+      rows = rows.filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 100);
   rows = rows.filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 100);
   const list = await Promise.all(rows.map(async ([uid, v], i) => {
     const u = await getUser(uid);
@@ -5667,7 +7028,13 @@ async function onEconomy(msg) {
   const content = msg.content.trim(), lower = content.toLowerCase();
   const words = content.split(/\s+/), first = words[0].toLowerCase();
   const send = (p) => msg.channel.send({ ...p, allowedMentions: { parse: [] } }).catch(() => null);
-  const box = (t) => send({ embeds: [EMB().setDescription(t)] });
+  const box = (t) => client.rest.post(Routes.channelMessages(msg.channelId), { body: {
+    flags: 1 << 15, allowed_mentions: { parse: [] }, components: v2Comps(t),
+  } }).catch(() => null);
+  const card2 = (title, body) => client.rest.post(Routes.channelMessages(msg.channelId), { body: {
+    flags: 1 << 15, allowed_mentions: { parse: [] },
+    components: [{ type: 17, components: [{ type: 10, content: (title ? '## ' + title + '\n' : '') + body }] }],
+  } }).catch(() => null);
   const key = gid + ':' + uid;
 
   // تأكيد التحويل بالرمز
@@ -5679,7 +7046,7 @@ async function onEconomy(msg) {
     const from = ecoUser(gid, uid), to = ecoUser(gid, p.targetId);
     if (from.balance < p.amount) return box('❌ ليس لديك رصيد كافٍ لإتمام عملية التحويل.');
     from.balance -= p.amount; to.balance += p.amount; dirty = true;
-        ecoLog(gid, uid, -p.amount, 'transfer'); ecoLog(gid, p.targetId, p.amount, 'transfer');
+        ecoLog(gid, uid, -p.amount, 'transfer', p.targetId); ecoLog(gid, p.targetId, p.amount, 'transfer', uid);
     return box(`✅ تم تحويل **${ecoFmt(p.amount)} ${cur}** إلى <@${p.targetId}>.`);
   }
 
@@ -5687,7 +7054,11 @@ async function onEconomy(msg) {
   if (first === 'رصيد' || first === 'ops' || lower === cname || lower.startsWith(cname + ' ')) {
     const t = msg.mentions.users.first() || msg.author;
     const b = ecoUser(gid, t.id).balance;
-    return box(t.id === uid ? `رصيدك الحالي : ${ecoFmt(b)} ${cur}` : `رصيد العضو <@${t.id}> الحالي : ${ecoFmt(b)} ${cur}`);
+        console.log('[eco-balance] pid=', process.pid, 'guild=', gid, 'file=', DB_PATH, 'bal=', b);
+        console.log('[eco-balance] guild=', gid, 'user=', t.id, 'bal=', b);
+        console.log('[eco-balance] guild=', gid, 'user=', t.id, 'bal=', b);
+    const em = cfg.emoji ? ' ' + cfg.emoji : '';
+return box(t.id === uid ? `رصيدك الحالي : ${ecoFmt(b)} ${cur}${em}` : `رصيد العضو <@${t.id}> الحالي : ${ecoFmt(b)} ${cur}${em}`);
   }
 
   // المكافأة اليومية
@@ -5699,10 +7070,19 @@ async function onEconomy(msg) {
       return box(`⏳ لقد استلمت مكافأتك مسبقاً. يمكنك الاستلام بعد **${Math.floor(r / 36e5)} ساعة و ${Math.floor((r % 36e5) / 6e4)} دقيقة**.`);
     }
     const vip = !!(msg.member && msg.member.roles.cache.has(ECO_VIP_ROLE));
-    const amt = vip ? 3000 + Math.floor(Math.random() * 2001) : 1700 + Math.floor(Math.random() * 301);
+    const premId = cfg.vipIds.includes(uid);   // فاضية تلقائياً إذا السيرفر مو بريميوم
+    const amt = premId
+      ? 3500 + Math.floor(Math.random() * 2001)          // 3500 - 5500
+      : vip ? 3000 + Math.floor(Math.random() * 2001) : 1700 + Math.floor(Math.random() * 301);
     u.balance += amt; u.lastDaily = now; dirty = true;
-        ecoLog(gid, uid, amt, 'daily');
-    return box(vip ? `🎁 **مكافأة عضو مميز**\n\nلقد حصلت على **${ecoFmt(amt)} ${cur}**` : `🎁 لقد حصلت على **${ecoFmt(amt)} ${cur}**`);
+    ecoLog(gid, uid, amt, 'daily');
+    const EM = cmdEmojis();
+    const g1 = EM.gift ? EM.gift + ' ' : '';
+    if (premId) {
+      const top = EM.vipgift ? EM.vipgift + ' ' : '';
+      return card2(null, `${top}**مكافأة العضوية المميزة**\n\nلقد حصلت على **${ecoFmt(amt)} ${cur}**${cfg.emoji ? ' ' + cfg.emoji : ''}`);
+    }
+    return box(vip ? `${g1}**مكافأة عضو مميز**\n\nلقد حصلت على **${ecoFmt(amt)} ${cur}**` : `${g1}لقد حصلت على **${ecoFmt(amt)} ${cur}**`);
   }
 
   // التحويل
@@ -5729,19 +7109,17 @@ async function onEconomy(msg) {
     const pm = /^توب\s+([1-5])$/.exec(content);
     const page = pm ? Number(pm[1]) : 1, s = (page - 1) * 10;
     const rows = Object.entries(dbr('economy', gid)).filter(([, d]) => d.balance > 0).sort((a, b) => b[1].balance - a[1].balance);
-    const lines = rows.slice(s, s + 10).map(([id, d], i) => `#${s + i + 1} <@${id}> — **${ecoFmt(d.balance)} ${cur}**`).join('\n') || `الصفحة **${page}** فارغة.`;
-    return send({ embeds: [EMB().setTitle(`قائمة التوب — الصفحة ${page}`).setDescription(lines)] });
+    const em = cfg.emoji ? ' ' + cfg.emoji : '';
+const lines = rows.slice(s, s + 10).map(([id, d], i) => `#${s + i + 1} <@${id}> — **${ecoFmt(d.balance)} ${cur}**${em}`).join('\n') || `الصفحة **${page}** فارغة.`;
+    return card2(`قائمة التوب — الصفحة ${page}`, lines);
   }
 
   // معلومات الحساب
   if (content === 'معلومات' || content === 'المعلومات') {
     const t = msg.mentions.users.first() || msg.author;
     const u = ecoUser(gid, t.id), next = u.lastDaily + 864e5;
-    return send({ embeds: [EMB().setTitle('معلومات الحساب').addFields(
-      { name: 'العضو', value: `<@${t.id}>` },
-      { name: 'الرصيد', value: `${cur} ${ecoFmt(u.balance)}` },
-      { name: 'آخر مكافأة', value: u.lastDaily ? ts(u.lastDaily, 'R') : 'لم يستلم أبداً' },
-      { name: 'المكافأة القادمة', value: next > Date.now() ? ts(next, 'R') : 'متاحة الآن' })] });
+    return card2('معلومات الحساب',
+      `**العضو:** <@${t.id}>\n**الرصيد:** ${cur} ${ecoFmt(u.balance)}\n**آخر مكافأة:** ${u.lastDaily ? ts(u.lastDaily, 'R') : 'لم يستلم أبداً'}\n**المكافأة القادمة:** ${next > Date.now() ? ts(next, 'R') : 'متاحة الآن'}`);
   }
 
   // اعطي / سحب (للإداريين)
@@ -5755,14 +7133,14 @@ async function onEconomy(msg) {
       const amt = ecoParse(arg);
       if (!(amt > 0)) return box('❌ مبلغ غير صالح. مثال: `اعطي @العضو 20k`');
       u.balance += amt; dirty = true;
-            ecoLog(gid, t.id, amt, 'admin');
+            ecoLog(gid, t.id, amt, 'admin', uid);
       return box(`✅ تم إضافة **${ecoFmt(amt)} ${cur}** إلى رصيد <@${t.id}>`);
     }
     let amt = arg === 'كامل' ? u.balance : arg === 'نص' ? Math.floor(u.balance / 2) : ecoParse(arg);
     if (!(amt > 0)) return box('❌ مبلغ غير صالح.');
     amt = Math.min(amt, u.balance);
     u.balance -= amt; dirty = true;
-        ecoLog(gid, t.id, -amt, 'admin');
+        ecoLog(gid, t.id, -amt, 'admin', uid);
     return box(`✅ تم سحب **${ecoFmt(amt)} ${cur}** من رصيد <@${t.id}>`);
   }
 }
@@ -5778,10 +7156,486 @@ async function onEcoInteraction(i) {
     p.code = String(crypto.randomInt(100000, 1000000));
     await i.reply({ content: `🔐 رمز التحقق:\n\n**${p.code}**\n\nأرسله في الروم لتأكيد التحويل.`, flags: 64 });
   } catch (_) {}
+}// ===================== الحماية التلقائية + الحماية العامة (إعدادات فقط) =====================
+const APR_MATCH = ['exact', 'contains', 'starts', 'ends'];
+const APR_ACT = ['block', 'warn', 'timeout', 'alert'];
+
+const GPR_ACTIONS = ['kick', 'ban', 'prison', 'strip', 'stripPerm', 'stripRolePerms'];
+
+function aprClean(b, gid) {
+  if (!b || typeof b !== 'object') throw codeErr('bad_value');
+  const rules = arr(b.rules);
+  if (rules.length > 25) throw codeErr('limit_reached');
+  const roles = new Set(roleList(gid).map((r) => r.id));
+  const chans = new Set(textChannels(gid).map((c) => c.id));
+  const cats = new Set(chanList(gid, [ChannelType.GuildCategory]).map((c) => c.id));
+  const ids = (v, set) => {
+    if (v === undefined) return [];
+    if (!Array.isArray(v) || v.length > 50) throw codeErr('bad_value');
+    return [...new Set(v.map(String))].filter((x) => set.has(x));
+  };
+  const words = (v, max) => {
+    const l = arr(v);
+    if (l.length > max) throw codeErr('limit_reached');
+    return l.map((w) => {
+      const text = String((w && w.text) || '').trim();
+      if (!text || text.length > 100 || !APR_MATCH.includes(w.match)) throw codeErr('bad_keyword');
+      return { text, match: w.match };
+    });
+  };
+  const seen = new Set();
+  return {
+    enabled: b.enabled === true,
+    rules: rules.map((r) => {
+      r = r || {};
+      const name = String(r.name || '').trim();
+      if (!name || name.length > 60) throw codeErr('bad_name');
+      let id = String(r.id || '');
+      if (!/^[a-f0-9]{6,16}$/.test(id) || seen.has(id)) id = newId();
+      seen.add(id);
+      const regex = arr(r.regex).map((p) => String(p).trim());
+      if (regex.length > 10) throw codeErr('limit_reached');
+      for (const p of regex) {
+        if (!p || p.length > 200) throw codeErr('bad_regex');
+        try { new RegExp(p, 'iu'); } catch (_) { throw codeErr('bad_regex'); }
+      }
+      const acts = arr(r.actions);
+      if (!acts.length) throw codeErr('no_action');
+      if (acts.length > APR_ACT.length) throw codeErr('limit_reached');
+      const used = new Set();
+      const actions = acts.map((a) => {
+        a = a || {};
+        if (!APR_ACT.includes(a.type) || used.has(a.type)) throw codeErr('bad_value');
+        used.add(a.type);
+        const o = { type: a.type };
+        if (a.type === 'alert') {
+          if (!chans.has(String(a.channel))) throw codeErr('bad_channel');
+          o.channel = String(a.channel);
+        }
+        if (a.type === 'timeout') {
+          const legacy = a.n === undefined;
+          const n = parseInt(legacy ? a.mins : a.n, 10), u = legacy ? 'm' : a.u;
+          if (!has(PEN_UNITS, u) || !(n >= 1) || n * PEN_UNITS[u] > 28 * 864e5) throw codeErr('bad_value');
+          o.n = n; o.u = u;
+        }
+        return o;
+      });
+      return {
+        id, name, enabled: r.enabled !== false,
+        antiLinks: r.antiLinks === true, antiInvites: r.antiInvites === true,
+        keywords: words(r.keywords, 1000), regex, allow: words(r.allow, 100),
+        exemptRoles: ids(r.exemptRoles, roles), exemptChannels: ids(r.exemptChannels, chans), exemptCategories: ids(r.exemptCategories, cats),
+        actions,
+      };
+    }),
+  };
+}
+const aprStored = (gid) => { const s = (db.settings[gid] || {}).autoprot || {}; return { enabled: !!s.enabled, rules: arr(s.rules) }; };
+
+const GPR_EXTRA = ['delete', 'warn', 'mute'];
+function actsClean(list, chans) {
+  const acts = arr(list);
+  if (acts.length > 4) throw codeErr('limit_reached');
+  const used = new Set();
+  return acts.map((a) => {
+    a = a || {};
+    if (!APR_ACT.includes(a.type) || used.has(a.type)) throw codeErr('bad_value');
+    used.add(a.type);
+    const o = { type: a.type };
+    if (a.type === 'alert') {
+      if (!chans.has(String(a.channel))) return null;   // روم انحذف: نتجاهل التنبيه
+      o.channel = String(a.channel);
+    }
+    if (a.type === 'timeout') {
+      const n = parseInt(a.n, 10);
+      if (!has(PEN_UNITS, a.u) || !(n >= 1) || n * PEN_UNITS[a.u] > 28 * 864e5) throw codeErr('bad_value');
+      o.n = n; o.u = a.u;
+    }
+    return o;
+  }).filter(Boolean);
+}
+function gprClean(b, gid) {
+  b = b && typeof b === 'object' ? b : {};
+  const roles = new Set(roleList(gid).map((r) => r.id));
+  const chans = new Set(textChannels(gid).map((c) => c.id));
+  const ids = (o, k, set) => {
+    const v = o && o[k];
+    if (v === undefined) return [];
+    if (!Array.isArray(v) || v.length > 50) throw codeErr('bad_value');
+    return [...new Set(v.map(String))].filter((x) => set.has(x));
+  };
+  const on = (o, k) => !!o && o[k] === true;
+  const pick = (v, list, d) => (list.includes(v) ? v : d);
+  const num = (v, d, lo, hi) => { const x = parseInt(v, 10); return x >= lo && x <= hi ? x : d; };
+  const prem = isPremium(gid);
+  const ab = b.antiBots || {}, ar = b.antiRaid || {}, al = b.antiLinks || {}, sp = b.antiSpam || {};
+  const su = b.serverUpdate || {}, ch = b.channels || {}, rl = b.roles || {};
+  return {
+    antiBots: { enabled: on(ab, 'enabled'), botAction: pick(ab.botAction, ['kick', 'ban'], 'kick'), adderAction: pick(ab.adderAction, GPR_ACTIONS, 'strip'), exemptRoles: ids(ab, 'exemptRoles', roles) },
+    antiRaid: {
+      enabled: on(ar, 'enabled'), count: num(ar.count, 5, 2, 100), secs: num(ar.secs, 10, 1, 300),
+      channel: chans.has(String(ar.channel)) ? String(ar.channel) : null,
+      actionOn: on(ar, 'actionOn'), action: pick(ar.action, ['kick', 'ban', 'prison'], 'kick'),
+    },
+    antiLinks: {
+      enabled: on(al, 'enabled'), action: pick(al.action, GPR_EXTRA, 'delete'),
+      exemptRoles: ids(al, 'exemptRoles', roles), exemptChannels: ids(al, 'exemptChannels', chans), forwarded: on(al, 'forwarded'),
+    },
+    antiSpam: {
+      enabled: on(sp, 'enabled'), repeat: num(sp.repeat, 3, 1, 20), sim: num(sp.sim, 90, 50, 100), inner: num(sp.inner, 80, 30, 100),
+      action: pick(sp.action, GPR_EXTRA, 'delete'),
+      exemptRoles: ids(sp, 'exemptRoles', roles), exemptChannels: ids(sp, 'exemptChannels', chans),
+
+    },    emojiLimit: { enabled: prem && on(b.emojiLimit, 'enabled'), max: num((b.emojiLimit || {}).max, 12, 1, 100), exemptRoles: ids(b.emojiLimit, 'exemptRoles', roles), actions: actsClean((b.emojiLimit || {}).actions, chans) },
+    lineLimit: { enabled: prem && on(b.lineLimit, 'enabled'), max: num((b.lineLimit || {}).max, 12, 1, 100), exemptRoles: ids(b.lineLimit, 'exemptRoles', roles), actions: actsClean((b.lineLimit || {}).actions, chans) },
+    serverUpdate: { lockName: on(su, 'lockName'), lockIcon: on(su, 'lockIcon'), action: pick(su.action, GPR_ACTIONS, 'strip'), exemptRoles: ids(su, 'exemptRoles', roles) },
+    webhook: { enabled: on(b.webhook, 'enabled'), action: pick(b.webhook && b.webhook.action, GPR_ACTIONS, 'strip'), exemptRoles: ids(b.webhook, 'exemptRoles', roles) },
+    channels: { lockCreate: on(ch, 'lockCreate'), lockDelete: on(ch, 'lockDelete'), lockEdit: on(ch, 'lockEdit'), action: pick(ch.action, GPR_ACTIONS, 'strip'), exemptRoles: ids(ch, 'exemptRoles', roles) },
+    roles: { lockCreate: on(rl, 'lockCreate'), lockDelete: on(rl, 'lockDelete'), lockEdit: on(rl, 'lockEdit'), action: pick(rl.action, GPR_ACTIONS, 'strip'), exemptRoles: ids(rl, 'exemptRoles', roles) },
+  };
+}
+const gprStored = (gid) => { try { return gprClean((db.settings[gid] || {}).genprot || {}, gid); } catch (_) { return gprClean({}, gid); } };
+
+app.get('/api/guild/:id/autoprot', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res); if (!info) return;
+  res.json({
+    canManage: info.canManage, guildPremium: isPremium(info.id),
+    roles: roleList(info.id), channels: textChannels(info.id),
+    categories: chanList(info.id, [ChannelType.GuildCategory]), cfg: aprStored(info.id),
+  });
+}));
+app.put('/api/guild/:id/autoprot', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res, { manage: true }); if (!info) return;
+  let cfg;
+  try { cfg = aprClean((req.body || {}).cfg, info.id); }
+  catch (e) { if (e.code) return res.status(400).json({ error: e.code }); throw e; }
+  S(info.id).autoprot = cfg;
+  dirty = true;
+  res.json({ ok: true, cfg });
+}));
+app.get('/api/guild/:id/genprot', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res); if (!info) return;
+  res.json({ canManage: info.canManage, cfg: gprStored(info.id) });
+}));
+app.put('/api/guild/:id/genprot', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res, { manage: true }); if (!info) return;
+  let cfg;
+  try { cfg = gprClean((req.body || {}).cfg, info.id); }
+  catch (e) { if (e.code) return res.status(400).json({ error: e.code }); throw e; }
+  S(info.id).genprot = cfg;
+  dirty = true;
+  res.json({ ok: true, cfg });
+}));// ===================== محرك الحماية العامة (غارات / روابط / سبام / رتب) =====================
+const GPR_MUTE_MS = 10 * 60000;   // مدة "ميوت مباشر"
+const GPR_EMOJI_MAX = 12;         // أقصى عدد إيموجي بالرسالة
+const GPR_LINES_MAX = 12;         // أقصى عدد أسطر
+const GPR_CHARS_MAX = 1500;       // أقصى عدد أحرف
+const GPR_LINK = /(https?:\/\/|www\.|discord\.gg\/|discord(?:app)?\.com\/invite\/)[^\s<>]+/gi;
+const GPR_LINK_ALLOW = ['tenor.com', 'giphy.com', 'cdn.discordapp.com', 'media.discordapp.net'];
+const GPR_DANGER = DANGER_PERMS.map((p) => PermissionFlagsBits[p]);
+const gprJoins = new Map();
+const gprRaidUntil = new Map();
+const gprMsgs = new Map();
+setInterval(() => { const c = Date.now() - 120000; for (const [k, v] of gprMsgs) if (!v.length || v[v.length - 1].t < c) gprMsgs.delete(k); }, 60000);
+
+const gprRawOn = (gid, k) => { const g = (db.settings[gid] || {}).genprot; return !!(g && g[k] && g[k].enabled === true); };
+
+function gprHasLink(text) {
+  const m = String(text || '').match(GPR_LINK);
+  if (!m) return false;
+  return m.some((u) => {
+    const host = u.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split(/[\/?#]/)[0].toLowerCase();
+    return !GPR_LINK_ALLOW.some((d) => host === d || host.endsWith('.' + d));
+  });
+}
+const gprNorm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+function gprSim(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 100;
+  if (a.length < 2 || b.length < 2) return 0;
+  const bg = (s) => { const m = new Map(); for (let i = 0; i < s.length - 1; i++) { const k = s.slice(i, i + 2); m.set(k, (m.get(k) || 0) + 1); } return m; };
+  const A = bg(a), B = bg(b);
+  let hit = 0;
+  for (const [k, v] of A) hit += Math.min(v, B.get(k) || 0);
+  return Math.round((2 * hit * 100) / (a.length - 1 + b.length - 1));
+}
+function gprInner(text) {
+  const w = gprNorm(text).split(' ').filter(Boolean);
+  if (w.length < 6) return 0;
+  return Math.round((1 - new Set(w).size / w.length) * 100);
+}
+const gprEmojiCount = (t) => (String(t).match(/<a?:\w+:\d+>|\p{Extended_Pictographic}/gu) || []).length;
+
+// رسالة التحذير بالخاص
+async function gprDM(user, reason, guild) {
+  try {
+    const dm = await user.createDM();
+    const sep = { type: 14, divider: true, spacing: 1 };
+    await client.rest.post(Routes.channelMessages(dm.id), { body: {
+      flags: 1 << 15, allowed_mentions: { parse: [] },
+      components: [{ type: 17, accent_color: 0xfbbf24, components: [
+        { type: 10, content: '## ⚠️ لقد تم تحذيرك تلقائياً' }, sep,
+        { type: 10, content: `**السيرفر :** ${guild.name}\n**السبب :** ${reason}` }, sep,
+        { type: 10, content: `<t:${Math.floor(Date.now() / 1000)}:F>` },
+      ] }],
+    } });
+  } catch (_) { /* الخاص مسكّر */ }
+}
+
+// تنفيذ الإجراء على عضو
+async function gprPunish(guild, member, action, why) {
+  const me = guild.members.me;
+  if (!member) return { done: false, text: 'العضو غير موجود' };
+  if (member.id === guild.ownerId) return { done: false, text: 'العضو مالك السيرفر' };
+  if (!me || member.roles.highest.position >= me.roles.highest.position) return { done: false, text: 'العضو اعلى من البوت' };
+  try {
+    if (action === 'prison') { await applyPrison(guild, me, member, 0, why); return { done: true, text: 'تم سجن العضو' }; }
+    if (action === 'strip') return await guardStripAll(guild, member);
+    if (action === 'stripRolePerms') {
+      const bad = member.roles.cache.filter((r) => r.id !== guild.id && !r.managed && r.editable && GPR_DANGER.some((p) => r.permissions.has(p)));
+      for (const r of bad.values()) await r.setPermissions(r.permissions.remove(GPR_DANGER), why).catch(() => {});
+      return { done: true, text: `تم سحب الصلاحيات من ${bad.size} رتبة` };
+    }
+    return await guardPunish(guild, member, action === 'stripPerm' ? 'strip' : action);
+  } catch (e) { return { done: false, text: e.usage ? e.message : 'فشل التنفيذ: ' + discordMsg(e) }; }
+}
+
+// الإجراء الإضافي (روابط / سبام)
+async function gprExtra(msg, extra, reason) {
+  const g = msg.guild, m = msg.member, me = g.members.me;
+  if (extra === 'warn') {
+    logInf(g.id, msg.author.id, 'warn', client.user.id, reason);
+    await gprDM(msg.author, reason, g);
+  } else if (extra === 'mute' && m && me && m.id !== g.ownerId && m.roles.highest.position < me.roles.highest.position) {
+    await applyMute(g, me, m, GPR_MUTE_MS, reason).catch(() => {});
+    await gprDM(msg.author, reason, g);
+  }
+}
+function gprExempt(msg, c) {
+  if (msg.guild.ownerId === msg.author.id) return true;
+  if (smartCfg(msg.guildId).whitelist.includes(msg.author.id)) return true;
+  const m = msg.member;
+  if (m && arr(c.exemptRoles).some((r) => m.roles.cache.has(r))) return true;
+  const ch = [msg.channelId, msg.channel && msg.channel.parentId].filter(Boolean);
+  return arr(c.exemptChannels).some((x) => ch.includes(x));
+}
+
+// ---------- الروابط + السبام ----------
+async function onGenProtMsg(msg) {
+  if (!msg.guildId || !msg.guild || !msg.author || msg.author.bot || msg.webhookId) return;
+  if (!['antiLinks', 'antiSpam', 'emojiLimit', 'lineLimit'].some((k) => gprRawOn(msg.guildId, k))) return;
+  const gp = gprStored(msg.guildId);
+  const text = String(msg.content || '');
+
+  const al = gp.antiLinks;
+  if (al.enabled && !gprExempt(msg, al)) {
+    const snaps = al.forwarded && msg.messageSnapshots ? [...msg.messageSnapshots.values()].map((s) => s.content || '').join('\n') : '';
+    if (gprHasLink(text) || (snaps && gprHasLink(snaps))) {
+      await msg.delete().catch(() => {});
+      await gprExtra(msg, al.action, 'نشر روابط (Anti-Links)');
+      return;
+    }
+  }
+  for (const [key, why, over] of [
+    ['emojiLimit', 'كثرة الإيموجي بالرسالة', (c) => gprEmojiCount(text) > c.max],
+    ['lineLimit', 'رسالة طويلة (أسطر كثيرة)', (c) => text.split('\n').length > c.max],
+  ]) {
+    const c = gp[key];
+    if (!c.enabled || !isPremium(msg.guildId) || gprExempt(msg, c) || !over(c)) continue;
+    await runActions(msg, c.actions.length ? c.actions : [{ type: 'block' }], '🛡️ ' + why, why);
+    return;
+  }
+  const sp = gp.antiSpam;
+  if (!sp.enabled || gprExempt(msg, sp)) return;
+  const norm = gprNorm(text);
+  if (!norm) return;
+  const k = msg.guildId + ':' + msg.author.id, now = Date.now();
+  const hist = (gprMsgs.get(k) || []).filter((x) => now - x.t < 30000);
+  hist.push({ t: now, norm, msg });
+  gprMsgs.set(k, hist.slice(-15));
+
+  let run = 0;
+  for (let i = hist.length - 1; i >= 0; i--) { if (gprSim(norm, hist[i].norm) >= sp.sim) run++; else break; }
+  let reason = null, toDel = [{ msg }];
+  if (run > sp.repeat) { reason = 'تكرار الرسائل (سبام)'; toDel = hist.filter((x) => gprSim(norm, x.norm) >= sp.sim); }
+  else if (gprInner(text) >= sp.inner) reason = 'تكرار الكلام داخل الرسالة (سبام)';
+
+  if (!reason) return;
+
+  gprMsgs.delete(k);
+  for (const x of toDel) x.msg.delete().catch(() => {});
+  await gprExtra(msg, sp.action, reason);
+}
+
+// ---------- مكافحة الغارات ----------
+async function onRaidJoin(m) {
+  if (!m.user || m.user.bot || !gprRawOn(m.guild.id, 'antiRaid')) return;
+  const cfg = gprStored(m.guild.id).antiRaid;
+  if (!cfg.enabled) return;
+  const g = m.guild, now = Date.now();
+  const list = (gprJoins.get(g.id) || []).filter((x) => now - x.t < cfg.secs * 1000);
+  list.push({ id: m.id, t: now });
+  gprJoins.set(g.id, list);
+  const active = (gprRaidUntil.get(g.id) || 0) > now;
+  if (!active && list.length < cfg.count) return;
+  gprRaidUntil.set(g.id, now + 60000);
+  const targets = active ? [m.id] : list.map((x) => x.id);
+  if (!active) gprJoins.set(g.id, []);
+
+  const lines = [];
+  for (const id of targets) {
+    const mem = id === m.id ? m : await g.members.fetch(id).catch(() => null);
+    if (!mem) continue;
+    await gprDM(mem.user, 'دخول جماعي مشبوه (غارة)', g);
+    const res = cfg.actionOn ? await gprPunish(g, mem, cfg.action, 'OPS: مكافحة الغارات') : null;
+    lines.push(`<@${id}>` + (res ? ` — ${res.done ? '✅' : '⚠️'} ${res.text}` : ''));
+  }
+  if (active) return;
+  const ch = cfg.channel && g.channels.cache.get(cfg.channel);
+  if (ch && typeof ch.send === 'function') {
+    ch.send({
+      embeds: [new EmbedBuilder().setColor(0xef4444).setTitle('🚨 تم رصد غارة')
+        .setDescription(`**عدد الحسابات :** ${lines.length}\n**خلال :** ${cfg.secs} ثانية\n\n` + chunkList(lines, 3000)).setTimestamp()],
+      allowedMentions: { parse: [] },
+    }).catch(() => {});
+  }
+}
+
+// ---------- حماية الرتب ----------
+async function gprRole(guild, flag, type, role, revert, title) {
+  const raw = ((db.settings[guild.id] || {}).genprot || {}).roles;
+  if (!raw || raw[flag] !== true || role.managed) return;
+  const c = gprStored(guild.id).roles;
+  const e = await execOf(guild, type, role.id);
+  if (!e || !e.user) return;
+  const uid = e.user.id;
+  if (uid === client.user.id || uid === guild.ownerId || smartCfg(guild.id).whitelist.includes(uid)) return;
+  const mem = await guild.members.fetch(uid).catch(() => null);
+  if (mem && arr(c.exemptRoles).some((r) => mem.roles.cache.has(r))) return;
+  await revert().catch(() => {});
+  const res = mem ? await gprPunish(guild, mem, c.action, 'OPS: حماية الرتب') : { done: false, text: 'العضو غير موجود بالسيرفر' };
+  L(guild, 'roles', title, `**المنفذ:** <@${uid}>\n**الرتبة:** \`${cut(role.name, 80)}\`\n**الإجراء:** ${res.done ? '✅' : '⚠️'} ${res.text}`);
+}
+// ---------- حماية الويب هوك ----------
+const gprWhSeen = new Set();
+async function onWebhooksUpdate(ch) {
+  const guild = ch.guild;
+  if (!guild || !gprRawOn(guild.id, 'webhook')) return;
+  const me = guild.members.me;
+  if (!me || !me.permissions.has(PermissionFlagsBits.ViewAuditLog)) return;
+  await new Promise((r) => setTimeout(r, 1000));
+  const logs = await guild.fetchAuditLogs({ type: AuditLogEvent.WebhookCreate, limit: 5 }).catch(() => null);
+  if (!logs) return;
+  const now = Date.now();
+  const en = logs.entries.find((e) => now - e.createdTimestamp < 20000 && !gprWhSeen.has(e.id));
+  if (!en || !en.executor) return;
+  gprWhSeen.add(en.id);
+  setTimeout(() => gprWhSeen.delete(en.id), 120000);
+
+  const c = gprStored(guild.id).webhook;
+  if (!c.enabled) return;
+  const uid = en.executor.id;
+  if (uid === client.user.id || uid === guild.ownerId || smartCfg(guild.id).whitelist.includes(uid)) return;
+  const mem = await guild.members.fetch(uid).catch(() => null);
+  if (mem && arr(c.exemptRoles).some((r) => mem.roles.cache.has(r))) return;
+
+  let removed = false;
+  if (en.target && en.target.id) removed = await client.rest.delete(Routes.webhook(en.target.id), { reason: 'OPS: حماية الويب هوك' }).then(() => true, () => false);
+  const res = mem ? await gprPunish(guild, mem, c.action, 'OPS: حماية الويب هوك') : { done: false, text: 'العضو غير موجود بالسيرفر' };
+  L(guild, 'channels', '🛡️ حماية الويب هوك',
+    `**المنفذ:** <@${uid}>\n**الروم:** <#${ch.id}>\n**حذف الويب هوك:** ${removed ? '✅ تم' : '⚠️ ما قدرت'}\n**الإجراء:** ${res.done ? '✅' : '⚠️'} ${res.text}`);
+}
+function attachGenProt(client) {
+  if (!client) return;
+  const on = (ev, fn) => client.on(ev, (...a) => {
+    try { const r = fn(...a); if (r && r.catch) r.catch((e) => console.error('[genprot]', e.message)); } catch (e) { console.error('[genprot]', e.message); }
+  });
+  on(Events.MessageCreate, onGenProtMsg);
+  on(Events.GuildMemberAdd, onRaidJoin);
+    on(Events.WebhooksUpdate, onWebhooksUpdate);
+  on(Events.GuildRoleCreate, (r) => gprRole(r.guild, 'lockCreate', AuditLogEvent.RoleCreate, r, () => r.delete('OPS: حماية الرتب'), '🛡️ حماية الرتب: منع إنشاء'));
+  on(Events.GuildRoleDelete, (r) => gprRole(r.guild, 'lockDelete', AuditLogEvent.RoleDelete, r, () => r.guild.roles.create({
+    name: r.name, color: r.color, permissions: r.permissions, hoist: r.hoist, mentionable: r.mentionable, position: r.position, reason: 'OPS: حماية الرتب',
+  }), '🛡️ حماية الرتب: منع حذف'));
+  on(Events.GuildRoleUpdate, (o, n) => {
+    if (o.name === n.name && o.color === n.color && o.permissions.bitfield === n.permissions.bitfield && o.hoist === n.hoist && o.mentionable === n.mentionable) return;
+    return gprRole(n.guild, 'lockEdit', AuditLogEvent.RoleUpdate, n, () => n.edit({
+      name: o.name, color: o.color, permissions: o.permissions, hoist: o.hoist, mentionable: o.mentionable, reason: 'OPS: حماية الرتب',
+    }), '🛡️ حماية الرتب: منع تعديل');
+  });
+}// ===================== محرك الحماية التلقائية (AutoMod OPS) =====================
+const APR_INVITE = /(discord\.gg|discord(?:app)?\.com\/invite|dsc\.gg)\/[^\s<>]+/i;
+const APR_URL = /(https?:\/\/|www\.)[^\s<>]+/i;
+const aprMs = (a) => (a.n ? a.n * (PEN_UNITS[a.u] || 6e4) : (a.mins || 10) * 6e4);
+
+function aprWordHit(text, w) {
+  const t = arNorm(text), k = arNorm(w.text);
+  if (!k) return false;
+  if (w.match === 'exact') return t === k;
+  if (w.match === 'starts') return t.startsWith(k);
+  if (w.match === 'ends') return t.endsWith(k);
+  return t.includes(k);
+}
+
+// ينفذ الإجراءات: حذف / تحذير / تايم اوت، وبعدين التنبيه بالروم
+async function runActions(msg, actions, title, why) {
+  const g = msg.guild, me = g.members.me;
+  const mem = msg.member || (await g.members.fetch(msg.author.id).catch(() => null));
+  const done = [];
+  for (const type of ['block', 'warn', 'timeout']) {
+    const a = actions.find((x) => x.type === type);
+    if (!a) continue;
+    try {
+      if (type === 'block') { await msg.delete(); done.push('🗑️ حذف الرسالة'); }
+      else if (!mem) done.push('⚠️ العضو غير موجود');
+      else if (type === 'warn') { await applyWarn(g, me, mem, why); done.push('⚠️ تحذير'); }
+      else {
+        const ms = Math.min(aprMs(a), 28 * 864e5);
+        if (!mem.moderatable) done.push('⚠️ ما قدرت أعطي تايم أوت (رتبة أعلى من البوت)');
+        else { await mem.timeout(ms, 'OPS: ' + why); done.push('⏳ تايم أوت ' + durText(ms)); }
+      }
+    } catch (e) { done.push('⚠️ فشل ' + type + ': ' + discordMsg(e)); }
+  }
+  const al = actions.find((x) => x.type === 'alert');
+  const ch = al && g.channels.cache.get(al.channel);
+  if (ch && typeof ch.send === 'function') {
+    const e = new EmbedBuilder().setColor(0xef4444).setTitle(title)
+      .setDescription([
+        `**العضو :** <@${msg.author.id}>`, `**الروم :** <#${msg.channelId}>`, `**السبب :** ${why}`,
+        `**الإجراءات :** ${done.join(' • ') || 'تنبيه فقط'}`, '',
+        '```\n' + cut(String(msg.content || '').replace(/```/g, "'''"), 900) + '\n```',
+      ].join('\n')).setTimestamp();
+    await ch.send({ embeds: [e], allowedMentions: { parse: [] } }).catch(() => {});
+  }
+}
+
+async function onAutoProt(msg) {
+  if (!msg.guildId || !msg.guild || !msg.author || msg.author.bot || msg.webhookId) return;
+  const cfg = aprStored(msg.guildId);
+  if (!cfg.enabled || !cfg.rules.length) return;
+  const text = String(msg.content || '');
+  if (!text) return;
+  if (msg.guild.ownerId === msg.author.id || smartCfg(msg.guildId).whitelist.includes(msg.author.id)) return;
+  const chIds = [msg.channelId, msg.channel && msg.channel.parentId].filter(Boolean);
+  const roles = msg.member ? msg.member.roles.cache : null;
+  for (const r of cfg.rules) {
+    if (r.enabled === false) continue;
+    if (arr(r.exemptChannels).some((x) => chIds.includes(x))) continue;
+    if (arr(r.exemptCategories).some((x) => chIds.includes(x))) continue;
+    if (roles && arr(r.exemptRoles).some((x) => roles.has(x))) continue;
+    if (arr(r.allow).some((w) => aprWordHit(text, w))) continue;
+    let why = null;
+    if (r.antiInvites && APR_INVITE.test(text)) why = 'دعوة سيرفر';
+    else if (r.antiLinks && APR_URL.test(text)) why = 'رابط';
+    else if (arr(r.keywords).some((w) => aprWordHit(text, w))) why = 'كلمة محظورة';
+    else if (arr(r.regex).some((p) => { try { return new RegExp(p, 'iu').test(text); } catch (_) { return false; } })) why = 'نمط محظور (Regex)';
+    if (!why) continue;
+    await runActions(msg, arr(r.actions), '🛡️ ' + r.name, why);
+    return;
+  }
 }
 app.listen(PORT, () => console.log(`OPS COIN site running on http://localhost:${PORT}`));
 async function onChannelSync(msg) {
-  client.on(Events.MessageCreate, onVent);
   if (!msg.guildId || !msg.author || msg.author.bot || msg.webhookId) return;
   if (!client.options.intents.has(GatewayIntentBits.MessageContent)) return; // بدون الإنتنت ما بنشوف النص وبنحذف غلط
   const cfg = chsyncCfg(msg.guildId);
@@ -6589,7 +8443,7 @@ for (const kid of kids.flat(Infinity)) {
   ];
   const MONTH = 4.99, YEAR = 49.99;
 
-  function pagePremium(r) {
+  function pagePremiumGuide(r) {
     const g = r.ctx === 'guild' ? guilds.find((x) => x.id === r.gid) : null;
     let plan = 'month', months = 1;
     const total = el('b', {});
@@ -6622,6 +8476,7 @@ for (const kid of kids.flat(Infinity)) {
     for (const [n, p] of [[planM, 'month'], [planY, 'year']]) n.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(p)(); } });
     draw();
 const coinBox = el('div', {});
+const fl2 = (t) => { const n = el('div', { class: 'okbox bad', role: 'alert' }, el('span', {}, t)); document.body.append(n); requestAnimationFrame(() => n.classList.add('show')); setTimeout(() => { n.classList.remove('show'); setTimeout(() => n.remove(), 400); }, 4500); };
 async function loadCoin() {
   if (!g) return;
   let c;
@@ -6632,16 +8487,22 @@ async function loadCoin() {
   const btn = el('button', {
     class: 'btn primary wide', type: 'button', disabled: !!c.reason,
     onclick: async () => {
-      if (!confirm(`سيتم خصم ${NF(c.price)} ${c.currency} من رصيدك. متأكد؟`)) return;
+      const yes = await confirmModal({
+        title: 'تأكيد عملية الشراء',
+        text: `سيتم خصم ${NF(c.price)} ${c.currency} من رصيدك مقابل اشتراك ${AR(c.days)} يوماً. هل أنت متأكد؟`,
+        okText: 'تأكيد الشراء',
+        cancelText: 'إلغاء',
+      });
+      if (!yes) return;
       btn.disabled = true;
       try {
         const j = await apiSend('POST', `/api/guild/${r.gid}/premium/coin`);
         g.premium = true; g.premiumUntil = j.until;
-        alert('تم تفعيل البريميوم ✅');
+        successBox(`تم تفعيل البريميوم بنجاح وخصم ${NF(c.price)} ${c.currency} من رصيدك 🎉`);
         route();
       } catch (e) {
         const m = { no_balance: 'رصيدك غير كافٍ.', too_early: 'التجديد متاح عندما يتبقى 3 أيام أو أقل.' };
-        alert(m[e.code] || errText(e));
+        fl2(m[e.code] || errText(e));
         loadCoin();
       }
     },
@@ -6680,10 +8541,7 @@ loadCoin();
       el('h1', { class: 'greet' }, 'خطط واشتراكات OPS System'),
       g ? el('div', { class: 'status' }, el('span', { class: 'dot ' + (g.premium ? 'on' : 'off') }),
           g.premium ? `البريميوم مفعّل لسيرفر ${g.name} حتى ${fmtDate(g.premiumUntil)}` : `البريميوم غير مفعّل لسيرفر ${g.name}`) : null,
-      el('div', { class: 'rowbar' },
-        el('h2', { class: 'h2' }, 'دليل المزايا والاشتراكات'),
-        el('button', { class: 'btn ghost small', type: 'button', onclick: toggleSubs }, 'سجل الاشتراكات')),
-      subsBox,
+
       el('p', { class: 'lead' }, 'استكشف كافة الفروقات والمزايا الحصرية المتاحة عند ترقية سيرفرك إلى عضوية OPS Premium للاستفادة من كامل قدرات النظام بدون حدود.'),
       el('div', { class: 'featgrid' }, FEATS.map(([t, d]) => el('div', { class: 'fcard' }, el('h3', {}, t), el('p', { class: 'muted' }, d)))),
       el('section', { class: 'panelc' },
@@ -6745,13 +8603,14 @@ loadCoin();
   }
 
   function flasher() {
-    const n = el('div', { class: 'flash', role: 'status' });
-    let t;
+    const n = el('div', { class: 'flash-anchor' });
     n.show = (text, ok = true) => {
-      clearTimeout(t);
-      n.textContent = text;
-      n.className = 'flash show ' + (ok ? 'ok' : 'bad');
-      t = setTimeout(() => { n.className = 'flash'; }, 5000);
+      const b = el('div', { class: 'okbox' + (ok ? '' : ' bad'), role: ok ? 'status' : 'alert' },
+        ok ? el('span', { class: 'okico' }, icon('check')) : null,
+        el('span', {}, text));
+      document.body.append(b);
+      requestAnimationFrame(() => b.classList.add('show'));
+      setTimeout(() => { b.classList.remove('show'); setTimeout(() => b.remove(), 400); }, 4500);
     };
     return n;
   }
@@ -6766,7 +8625,35 @@ loadCoin();
     });
     return b;
   };
+  // ---- مودال تأكيد احترافي ----
+  function confirmModal({ title, text, okText = 'تأكيد', cancelText = 'إلغاء' }) {
+    return new Promise((resolve) => {
+      const done = (v) => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+      const onKey = (e) => { if (e.key === 'Escape') done(false); };
+      const okBtn = el('button', { class: 'cm-btn ok', type: 'button', onclick: () => done(true) }, okText);
+      const ov = el('div', { class: 'cm-ov', role: 'dialog', 'aria-modal': 'true', onclick: (e) => { if (e.target === ov) done(false); } },
+        el('div', { class: 'cm-box' },
+          el('div', { class: 'cm-ico' }, icon('coin')),
+          el('h3', {}, title),
+          el('p', {}, text),
+          el('div', { class: 'cm-btns' },
+            okBtn,
+            el('button', { class: 'cm-btn cancel', type: 'button', onclick: () => done(false) }, cancelText))));
+      document.body.append(ov);
+      document.addEventListener('keydown', onKey);
+      okBtn.focus();
+    });
+  }
 
+  // ---- مربع نجاح أخضر ----
+  function successBox(text) {
+    const n = el('div', { class: 'okbox', role: 'status' },
+      el('span', { class: 'okico' }, icon('check')),
+      el('span', {}, text));
+    document.body.append(n);
+    requestAnimationFrame(() => n.classList.add('show'));
+    setTimeout(() => { n.classList.remove('show'); setTimeout(() => n.remove(), 400); }, 4500);
+  }
   const pageSoon = (title) =>
     el('div', { class: 'page' },
       el('h1', { class: 'greet' }, title),
@@ -6789,7 +8676,59 @@ loadCoin();
       fr.readAsDataURL(file);
     });
   }
+  const upRe = /^up:[a-f0-9]{10}\.(png|jpg|gif|webp)$/;
+  const isImgRef = (v) => /^https:\/\//i.test(v || '') || upRe.test(v || '');
+  const imgSrc = (gid, v) => (upRe.test(v || '') ? `/api/guild/${gid}/embimg/${v.slice(3)}` : (v || ''));
 
+  // مربع صورة: رفع / رابط / المعرض
+  function imgSlot(gid, obj, key, o = {}) {
+    const { label = 'صورة', ro = false, fl = null, onChange = () => {} } = o;
+    const holder = el('div', { class: 'islot' });
+    const err = (e) => fl && fl.show(errText(e), false);
+    const set = (v) => { obj[key] = v; draw(); onChange(); };
+    const file = el('input', { type: 'file', accept: IMG_OK.join(','), class: 'hidden' });
+    file.addEventListener('change', async () => {
+      const f = file.files[0]; file.value = '';
+      if (!f) return;
+      try {
+        const image = await readImage(f, 8);
+        const j = await apiSend('POST', `/api/guild/${gid}/embimg`, { image });
+        set(j.ref);
+      } catch (e) { err(e); }
+    });
+    const pickLink = () => {
+      const u = (prompt('ألصق رابط الصورة (لازم https)') || '').trim();
+      if (!u) return;
+      if (!/^https:\/\//i.test(u)) return fl && fl.show('الرابط لازم يبدأ بـ https', false);
+      set(u);
+    };
+    const pickGallery = async () => {
+      let list = [];
+      try { list = (await api(`/api/guild/${gid}/embimg`)).list; } catch (e) { return err(e); }
+      const done = () => ov.remove();
+      const ov = el('div', { class: 'cm-ov', role: 'dialog', 'aria-modal': 'true', onclick: (e) => { if (e.target === ov) done(); } },
+        el('div', { class: 'cm-box lm' },
+          el('div', { class: 'rowbar' }, el('h3', {}, 'معرض الصور'),
+            el('button', { class: 'btn ghost small', type: 'button', 'aria-label': 'إغلاق', onclick: done }, icon('close'))),
+          list.length
+            ? el('div', { class: 'galpick' }, list.map((r) => el('button', { type: 'button', class: 'galit', onclick: () => { done(); set(r); } }, el('img', { src: imgSrc(gid, r), alt: '' }))))
+            : el('p', {}, 'ما في صور مرفوعة بعد، ارفع صورة أول.')));
+      document.body.append(ov);
+    };
+    function draw() {
+      const v = obj[key] || '';
+      if (v) {
+        put(holder, el('div', { class: 'ipv' }, el('img', { src: imgSrc(gid, v), alt: '' }),
+          el('button', { class: 'ix', type: 'button', disabled: ro, 'aria-label': 'إزالة', onclick: () => set('') }, icon('close'))));
+        return;
+      }
+      const b = (ic, t, fn) => el('button', { class: 'ibtn', type: 'button', disabled: ro, onclick: fn }, icon(ic), t);
+      put(holder, file, el('div', { class: 'idrop' }, icon('image'), el('small', {}, label),
+        el('div', { class: 'ibtns' }, b('upload', 'رفع', () => file.click()), b('link', 'رابط', pickLink), b('image', 'المعرض', pickGallery))));
+    }
+    draw();
+    return holder;
+  }
   // ---- بروفايل البوت ----
   function pageBotProfile(r) {
     const gid = r.gid;
@@ -7059,7 +8998,472 @@ loadCoin();
     load();
     return box;
   }
+  // =====================  الحماية التلقائية + العامة (تابين)  =====================
+  Object.assign(ICONS, {
+    webhook: '<circle cx="12" cy="6" r="2.5"/><circle cx="6" cy="17" r="2.5"/><circle cx="18" cy="17" r="2.5"/><path d="M12 8.5l-4.5 6M8.5 17h7M13.5 8.5l3.5 6"/>',
+  });
+  Object.assign(ERRS, {
+    bad_regex: 'نمط Regex غير صالح.',
+    no_action: 'أضف إجراء واحد على الأقل للقاعدة.',
+  });
+  const APR_MATCH_L = [['exact', 'تطابق تام'], ['contains', 'تحتوي على الكلمة'], ['starts', 'تبدأ بـ الكلمة'], ['ends', 'تنتهي بـ الكلمة']];
+  const APR_ACT_L = [['block', 'منع الرسالة (Block)'], ['warn', 'تحذير العضو (Warn)'], ['timeout', 'تايم اوت للعضو (Timeout)'], ['alert', 'إرسال تنبيه (Alert)']];
+  const UNIT_L = [['s', 'ثانية'], ['m', 'دقيقة'], ['h', 'ساعة'], ['d', 'يوم']];
 
+  // محرر الإجراءات (مشترك بين القواعد وحماية الإيموجي/الأسطر)
+  function actionsEditor(actions, channels, ro, onChange) {
+    const box = el('div', { class: 'stack tight' });
+    const list = el('div', { class: 'stack tight' });
+    const addAct = el('button', {
+      class: 'addbox white', type: 'button',
+      onclick: () => {
+        const free = APR_ACT_L.find(([v]) => !actions.some((a) => a.type === v));
+        if (!free) return;
+        actions.push(free[0] === 'timeout' ? { type: 'timeout', n: 10, u: 'm' } : { type: free[0] });
+        draw(); onChange();
+      },
+    }, icon('plus'), 'إضافة إجراء آخر');
+    function draw() {
+      addAct.disabled = ro || actions.length >= APR_ACT_L.length;
+      put(list, actions.map((a, i) => {
+        const taken = new Set(actions.filter((_, j) => j !== i).map((y) => y.type));
+        const s = el('select', { class: 'sel full', disabled: ro, 'aria-label': 'الإجراء' },
+          APR_ACT_L.filter(([v]) => v === a.type || !taken.has(v)).map(([v, t]) => el('option', { value: v, selected: v === a.type }, t)));
+        s.addEventListener('change', () => {
+          a.type = s.value;
+          if (a.type === 'timeout' && !a.n) { a.n = 10; a.u = 'm'; }
+          draw(); onChange();
+        });
+        let extra = [];
+        if (a.type === 'alert') {
+          const c = el('select', { class: 'sel full', disabled: ro, 'aria-label': 'روم التنبيه' },
+            el('option', { value: '' }, '# اختر الروم...'),
+            channels.map((x) => el('option', { value: x.id, selected: x.id === a.channel }, '# ' + x.name)));
+          c.addEventListener('change', () => { a.channel = c.value || null; onChange(); });
+          extra = [c];
+        } else if (a.type === 'timeout') {
+          const n = el('input', { class: 'inp', type: 'number', min: 1, max: 99999, value: a.n || 10, disabled: ro, 'aria-label': 'المدة' });
+          n.addEventListener('input', () => { a.n = Math.max(1, parseInt(n.value, 10) || 1); onChange(); });
+          const u = el('select', { class: 'sel', disabled: ro, 'aria-label': 'الوحدة' },
+            UNIT_L.map(([v, t]) => el('option', { value: v, selected: v === (a.u || 'm') }, t)));
+          u.addEventListener('change', () => { a.u = u.value; onChange(); });
+          extra = [n, u];
+        }
+        return el('div', { class: 'actrow2' }, s, extra,
+          el('button', {
+            class: 'btn ghost small danger delx', type: 'button', 'aria-label': 'حذف الإجراء', disabled: ro || actions.length <= 1,
+            onclick: () => { actions.splice(i, 1); draw(); onChange(); },
+          }, icon('trash')));
+      }));
+    }
+    draw();
+    put(box, list, addAct);
+    return box;
+  }
+  const GPR_ACT_L = [
+    ['kick', 'طرد (Kick)'], ['ban', 'حظر (Ban)'], ['prison', 'سجن (Prison)'], ['strip', 'سحب الرتب (Strip Roles)'],
+    ['stripPerm', 'سحب رتب الصلاحيات من العضو (Remove Perm Roles)'], ['stripRolePerms', 'سحب الصلاحيات من الرتب (Strip Role Perms)'],
+  ];
+  const matchLabel = (m) => (APR_MATCH_L.find((x) => x[0] === m) || APR_MATCH_L[0])[1];
+
+  function pageGeneral(r) {
+    const gid = r.gid;
+    const box = el('div', { class: 'page' });
+    const fl = flasher();
+    let d = null, tab = 'auto', ap = null, apBase = null, gp = null, gpBase = null, bar = null;
+    const dirty = () => JSON.stringify(ap) !== JSON.stringify(apBase) || JSON.stringify(gp) !== JSON.stringify(gpBase);
+    const touch = () => bar && bar.refresh();
+
+    async function load() {
+      try {
+        const [a, g] = await Promise.all([api(`/api/guild/${gid}/autoprot`), api(`/api/guild/${gid}/genprot`)]);
+        d = { canManage: a.canManage, guildPremium: a.guildPremium, roles: a.roles, channels: a.channels, categories: a.categories };
+        ap = a.cfg; gp = g.cfg;
+      } catch (e) { put(box, errorBox(load)); return; }
+      apBase = clone(ap); gpBase = clone(gp);
+      build();
+    }
+    async function save() {
+            for (const k of ['emojiLimit', 'lineLimit']) {
+        if (gp[k].enabled && gp[k].actions.some((a) => a.type === 'alert' && !a.channel)) return fl.show('اختر روم التنبيه.', false);
+      }
+      try {
+        if (JSON.stringify(ap) !== JSON.stringify(apBase)) {
+          const j = await apiSend('PUT', `/api/guild/${gid}/autoprot`, { cfg: ap });
+          ap = j.cfg; apBase = clone(ap);
+        }
+        if (JSON.stringify(gp) !== JSON.stringify(gpBase)) {
+          const j = await apiSend('PUT', `/api/guild/${gid}/genprot`, { cfg: gp });
+          gp = j.cfg; gpBase = clone(gp);
+        }
+        fl.show('تم حفظ الإعدادات ✅');
+        build();
+      } catch (e) { fl.show(errText(e), false); }
+    }
+
+    function build() {
+      const ro = !d.canManage;
+      const pane = el('div', { class: 'stack' });
+      const tabsBox = el('div', { class: 'ptabs', role: 'tablist' });
+      const rulesBox = el('div', { class: 'stack' });
+
+      const drawTabs = () => put(tabsBox, [['auto', 'الحماية التلقائية', 'chat'], ['gen', 'الحماية العامة', 'shield']].map(([id, l, ic]) =>
+        el('button', { type: 'button', role: 'tab', 'aria-selected': String(tab === id), class: 'ptab' + (tab === id ? ' on' : ''), onclick: () => { tab = id; drawTabs(); drawPane(); } }, icon(ic), l)));
+
+      // ---------- التاب الأول: القواعد ----------
+      function ruleCard(x) {
+        const kinds = [x.antiLinks && 'Links', x.antiInvites && 'Invites', x.keywords.length && 'Keywords', x.regex.length && 'Regex'].filter(Boolean);
+        const sw = toggle(x.enabled !== false, (v) => { x.enabled = v; touch(); }, ro);
+        sw.classList.add('green');
+        return el('section', { class: 'rcard' },
+          el('span', { class: 'hbox green' }, icon('shield')),
+          el('div', { class: 'rc-info' },
+            el('b', {}, x.name),
+            el('div', { class: 'rc-tags' }, (kinds.length ? kinds : ['—']).map((k) => el('span', { class: 'mbadge' }, k)), el('span', { class: 'mbadge' }, `${x.actions.length} إجراءات`))),
+          el('div', { class: 'rc-ctl' },
+            el('button', { class: 'btn ghost small', type: 'button', 'aria-label': 'تعديل', disabled: ro, onclick: () => openRule(x) }, icon('pen')),
+            el('button', {
+              class: 'btn ghost small danger', type: 'button', 'aria-label': 'حذف', disabled: ro,
+              onclick: () => { if (!confirm('حذف القاعدة "' + x.name + '"؟')) return; ap.rules.splice(ap.rules.indexOf(x), 1); drawRules(); touch(); },
+            }, icon('trash')),
+            sw));
+      }
+      function drawRules() {
+        put(rulesBox, ap.rules.length ? ap.rules.map(ruleCard) : el('div', { class: 'empty boxed' }, icon('shield'), el('p', {}, 'لا توجد قواعد حماية بعد')));
+      }
+
+      function openRule(x) {
+        const isNew = !x;
+        const w = x ? clone(x) : {
+          id: '', name: 'OPS System | Custom Rule', enabled: true, antiLinks: false, antiInvites: false,
+          keywords: [], regex: [], allow: [], exemptRoles: [], exemptChannels: [], exemptCategories: [],
+          actions: [{ type: 'block', channel: null, mins: 10 }],
+        };
+        const onKey = (e) => { if (e.key === 'Escape') close(); };
+        const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); };
+
+        const nameIn = el('input', { class: 'inp', type: 'text', maxlength: 60, 'aria-label': 'اسم القاعدة' });
+        nameIn.value = w.name;
+        nameIn.addEventListener('input', () => { w.name = nameIn.value; });
+
+        const tog = (title, sub, key) =>
+          el('div', { class: 'rm-tog' }, el('div', {}, el('b', {}, title), el('small', { class: 'muted' }, sub)), toggle(w[key], (v) => { w[key] = v; }, false));
+
+        // كلمات (محظورة / مسموحة)
+        const wordBlock = (title, sub, list, max, cls, ph, empty) => {
+          const m = el('select', { class: 'sel', 'aria-label': 'نوع المطابقة' }, APR_MATCH_L.map(([v, t]) => el('option', { value: v }, t)));
+          const inp = el('input', { class: 'inp', type: 'text', maxlength: 100, placeholder: ph, 'aria-label': ph });
+          const cnt = el('span', { class: 'cntb' });
+          const items = el('div', { class: 'chips' });
+          const draw = () => {
+            cnt.textContent = `${list.length}/${max}`;
+            put(items, list.length
+              ? list.map((k, i) => el('span', { class: 'achip' }, el('b', { dir: 'auto' }, k.text), el('em', { class: 'mbadge' }, matchLabel(k.match)),
+                  el('button', { type: 'button', class: 'x', 'aria-label': 'إزالة', onclick: () => { list.splice(i, 1); draw(); } }, '×')))
+              : el('small', { class: 'muted center2' }, empty));
+          };
+          const add = () => {
+            const t = inp.value.trim();
+            if (!t) return;
+            if (list.length >= max) return fl.show(`الحد الأقصى ${max}.`, false);
+            if (!list.some((k) => k.text.toLowerCase() === t.toLowerCase() && k.match === m.value)) list.push({ text: t, match: m.value });
+            inp.value = ''; draw();
+          };
+          inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+          draw();
+          return el('section', { class: 'subc' },
+            el('div', { class: 'rowbar' }, el('div', {}, el('b', {}, title), el('small', { class: 'muted' }, sub)), cnt),
+            el('div', { class: 'addrow' }, m, inp, el('button', { class: 'btn small ' + cls, type: 'button', onclick: add }, 'إضافة')),
+            items);
+        };
+
+        // Regex
+        const rxBlock = () => {
+          const inp = el('input', { class: 'inp', type: 'text', maxlength: 200, dir: 'ltr', placeholder: '^pattern$', 'aria-label': 'نمط Regex' });
+          const cnt = el('span', { class: 'cntb' });
+          const items = el('div', { class: 'chips' });
+          const draw = () => {
+            cnt.textContent = `${w.regex.length}/10`;
+            put(items, w.regex.length
+              ? w.regex.map((p, i) => el('span', { class: 'achip' }, el('b', { dir: 'ltr' }, p),
+                  el('button', { type: 'button', class: 'x', 'aria-label': 'إزالة', onclick: () => { w.regex.splice(i, 1); draw(); } }, '×')))
+              : el('small', { class: 'muted center2' }, 'لا توجد أنماط مضافة'));
+          };
+          const add = () => {
+            const p = inp.value.trim();
+            if (!p) return;
+            if (w.regex.length >= 10) return fl.show('الحد الأقصى 10 أنماط.', false);
+            try { new RegExp(p, 'iu'); } catch (_) { return fl.show(ERRS.bad_regex, false); }
+            if (!w.regex.includes(p)) w.regex.push(p);
+            inp.value = ''; draw();
+          };
+          inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+          draw();
+          return el('section', { class: 'subc' },
+            el('div', { class: 'rowbar' }, el('div', {}, el('b', {}, 'أنماط متقدمة (Regex Patterns)'), el('small', { class: 'muted' }, 'تعبيرات نمطية للمطابقة المتقدمة (للمطورين والخبراء)')), cnt),
+            el('div', { class: 'addrow' }, inp, el('button', { class: 'btn small b-blue', type: 'button', onclick: add }, 'إضافة')),
+            items);
+        };
+
+                // الإجراءات
+        w.actions.forEach((a) => { if (a.type === 'timeout' && !a.n) { a.n = a.mins || 10; a.u = 'm'; } });
+        const actsBox = actionsEditor(w.actions, d.channels, false, () => {});
+        function drawActs() {
+          put(actsBox, w.actions.map((a, i) => {
+            const taken = new Set(w.actions.filter((_, j) => j !== i).map((y) => y.type));
+            const s = el('select', { class: 'sel full', 'aria-label': 'الإجراء' },
+              APR_ACT_L.filter(([v]) => v === a.type || !taken.has(v)).map(([v, t]) => el('option', { value: v, selected: v === a.type }, t)));
+            s.addEventListener('change', () => { a.type = s.value; drawActs(); });
+            let extra = null;
+            if (a.type === 'alert') {
+              extra = el('select', { class: 'sel full', 'aria-label': 'روم التنبيه' },
+                el('option', { value: '' }, '# اختر الروم...'),
+                d.channels.map((c) => el('option', { value: c.id, selected: c.id === a.channel }, '# ' + c.name)));
+              extra.addEventListener('change', () => { a.channel = extra.value || null; });
+            } else if (a.type === 'timeout') {
+              extra = el('input', { class: 'inp', type: 'number', min: 1, max: 40320, value: a.mins || 10, 'aria-label': 'مدة التايم اوت بالدقائق', placeholder: 'المدة بالدقائق' });
+              extra.addEventListener('input', () => { a.mins = parseInt(extra.value, 10) || 10; });
+            }
+            return el('div', { class: 'actrow2' },
+              el('button', {
+                class: 'btn ghost small danger delx', type: 'button', 'aria-label': 'حذف الإجراء', disabled: w.actions.length <= 1,
+                onclick: () => { w.actions.splice(i, 1); drawActs(); },
+              }, icon('trash')),
+              s, extra);
+          }));
+          addAct.disabled = w.actions.length >= APR_ACT_L.length;
+        }
+        drawActs();
+
+        const L = (t) => el('label', { class: 'flabel' }, t);
+        const submit = () => {
+          w.name = w.name.trim();
+          if (!w.name) return fl.show(ERRS.bad_name, false);
+          if (w.actions.some((a) => a.type === 'alert' && !a.channel)) return fl.show('اختر روم التنبيه.', false);
+          if (isNew) ap.rules.push(w);
+          else { const i = ap.rules.indexOf(x); if (i >= 0) ap.rules[i] = w; }
+          close(); touch(); drawRules();
+        };
+
+        const ov = el('div', { class: 'cm-ov', role: 'dialog', 'aria-modal': 'true', onclick: (e) => { if (e.target === ov) close(); } },
+          el('div', { class: 'rm-box' },
+            el('div', { class: 'rm-head' },
+              el('h3', {}, isNew ? 'إنشاء قاعدة جديدة' : 'تعديل القاعدة'),
+              el('button', { class: 'rm-x', type: 'button', 'aria-label': 'إغلاق', onclick: close }, icon('close'))),
+            el('div', { class: 'rm-body' },
+              L('اسم القاعدة'), nameIn,
+              el('div', { class: 'rm-type' }, icon('shield'), el('b', {}, 'فلترة المحتوى')),
+              tog('منع الروابط (Anti-Links)', 'منع تلقائي للروابط الخارجية', 'antiLinks'),
+              tog('منع الدعوات', 'حظر دعوات سيرفرات ديسكورد', 'antiInvites'),
+              wordBlock('الكلمات المحظورة (Keywords)', 'يتم حظر الرسائل التي تحتوي على هذه الكلمات', w.keywords, 1000, 'b-gold', 'اكتب الكلمة...', 'لا توجد كلمات مضافة بعد'),
+              rxBlock(),
+              wordBlock('قائمة السماح (Allowed Words/Phrases)', 'استثناءات لن يتم حظرها. استخدم الخيارات لتحديد مكان الكلمة.', w.allow, 100, 'b-green', 'اكتب الكلمة/العبارة المسموحة...', 'قائمة السماح فارغة'),
+              L('السماح لرتب معينة (Exempt Roles)'),
+              multiPick(d.roles, w.exemptRoles, 'اختر الرتب المستثناة...', false, (v) => { w.exemptRoles = v; }),
+              L('السماح لرومات معينة (Exempt Channels)'),
+              multiPick(d.channels.map((c) => ({ id: c.id, name: '# ' + c.name })), w.exemptChannels, 'اختر الرومات المستثناة...', false, (v) => { w.exemptChannels = v; }),
+              L('السماح لكاتاقوريات كاملة (Exempt Categories)'),
+              multiPick(d.categories, w.exemptCategories, 'اختر الكاتاقوريات المستثناة...', false, (v) => { w.exemptCategories = v; }),
+              L('الإجراءات المتخذة (Punishments)'),
+              actsBox),
+            el('div', { class: 'rm-foot' },
+              el('button', { class: 'btn ghost small', type: 'button', onclick: close }, 'إلغاء'),
+              el('button', { class: 'btn small b-black', type: 'button', onclick: submit }, isNew ? 'إنشاء القاعدة' : 'حفظ القاعدة'))));
+        document.body.append(ov);
+        document.addEventListener('keydown', onKey);
+      }
+
+      const autoPane = () => [
+        el('section', { class: 'panelc' },
+          el('div', { class: 'rowbar' },
+            el('div', {}, el('h2', {}, 'قواعد الحماية التلقائية'), el('small', { class: 'muted' }, 'تحكم في المحتوى المحظور والروابط الممنوعة باستخدام نظام AutoMod OPS')),
+            el('div', { class: 'stack tight' },
+              el('button', { class: 'btn primary small', type: 'button', disabled: ro || ap.rules.length >= 25, onclick: () => openRule(null) }, icon('plus'), 'إنشاء قاعدة جديدة'),
+              el('div', { class: 'bhv' }, el('b', {}, 'تفعيل الحماية التلقائية (AutoMod OPS)'),
+                (() => { const s = toggle(ap.enabled, (v) => { ap.enabled = v; touch(); }, ro); s.classList.add('green'); return s; })())))),
+        rulesBox,
+      ];
+
+      // ---------- التاب الثاني: الحماية العامة ----------
+      const selF = (label, cur, opts, fn) => {
+        const s = el('select', { class: 'sel full', disabled: ro, 'aria-label': label }, opts.map(([v, t]) => el('option', { value: v, selected: v === cur }, t)));
+        s.addEventListener('change', () => { fn(s.value); touch(); });
+        return el('div', { class: 'stack tight' }, el('label', { class: 'flabel' }, label), s);
+      };
+      const roleF = (label, obj) =>
+        el('div', { class: 'stack tight' }, el('label', { class: 'flabel' }, label),
+          multiPick(d.roles, obj.exemptRoles, 'اختر الرتب...', ro, (v) => { obj.exemptRoles = v; touch(); }));
+      const bhv = (title, on, fn) => el('div', { class: 'bhv' }, el('b', {}, title), toggle(on, (v) => { fn(v); touch(); }, ro));
+      const head = (ic, cls, title, sub) => el('div', { class: 'phd' }, el('span', { class: 'hbox ' + cls }, icon(ic)), el('div', {}, el('h2', {}, title), el('small', { class: 'muted' }, sub)));
+      const simple = (ic, cls, title, sub, obj) =>
+        el('section', { class: 'panelc' }, el('div', { class: 'trow' }, head(ic, cls, title, sub), toggle(obj.enabled, (v) => { obj.enabled = v; touch(); }, ro)));
+
+      const GPR_EXTRA_L = [['delete', 'حذف الرسالة فقط (Only Delete)'], ['warn', 'تحذير العضو (Warn)'], ['mute', 'ميوت مباشر (Direct Mute)']];
+      const tg = (on, fn, color) => {
+        const s = toggle(on, (v) => { fn(v); touch(); }, ro);
+        if (color) s.classList.add('t-' + color);
+        return s;
+      };
+      const trow = (hd, sw) => el('div', { class: 'trow' }, hd, sw);
+      const stepper = (label, obj, key, lo, hi) => {
+        const inp = el('input', { type: 'number', min: lo, max: hi, value: obj[key], disabled: ro, 'aria-label': label });
+        const set = (v) => { v = Math.max(lo, Math.min(hi, Math.round(Number(v)) || lo)); obj[key] = v; inp.value = v; touch(); };
+        inp.addEventListener('change', () => set(inp.value));
+        return el('div', { class: 'stack tight' },
+          el('label', { class: 'flabel' }, label),
+          el('div', { class: 'nstep' },
+            el('button', { type: 'button', disabled: ro, 'aria-label': 'زيادة', onclick: () => set(obj[key] + 1) }, '+'),
+            inp,
+            el('button', { type: 'button', disabled: ro, 'aria-label': 'نقصان', onclick: () => set(obj[key] - 1) }, '−')));
+      };
+      const slider = (label, hint, obj, key, lo, hi) => {
+        const out = el('b', { class: 'pctb' }, obj[key] + '%');
+        const r = el('input', { type: 'range', class: 'rng-orange', min: lo, max: hi, value: obj[key], disabled: ro, 'aria-label': label });
+        r.addEventListener('input', () => { obj[key] = Number(r.value); out.textContent = obj[key] + '%'; touch(); });
+        return el('div', { class: 'tbox' }, el('div', { class: 'rowbar' }, el('b', {}, label), out), r, el('small', { class: 'muted' }, hint));
+      };
+      const chanF = (label, cur, fn) => {
+        const s = el('select', { class: 'sel full', disabled: ro, 'aria-label': label },
+          el('option', { value: '' }, 'اختر شات...'),
+          d.channels.map((c) => el('option', { value: c.id, selected: c.id === cur }, '# ' + c.name)));
+        s.addEventListener('change', () => { fn(s.value || null); touch(); });
+        return el('div', { class: 'stack tight' }, el('label', { class: 'flabel' }, label), s);
+      };
+      const chansF = (label, obj) =>
+        el('div', { class: 'stack tight' }, el('label', { class: 'flabel' }, label),
+          multiPick(d.channels.map((c) => ({ id: c.id, name: '# ' + c.name })), obj.exemptChannels, 'اختر الشاتات...', ro, (v) => { obj.exemptChannels = v; touch(); }));
+      const premRow = (title, sub, obj, key) =>
+        el('div', { class: 'bhv' },
+          el('div', {}, el('div', { class: 'tline' }, el('b', {}, title), el('span', { class: 'pbadge' }, icon('lock'), 'بريميوم')), el('small', { class: 'muted' }, sub)),
+          d.guildPremium ? tg(obj[key], (v) => { obj[key] = v; }, 'orange') : el('span', { class: 'lockedsw', title: 'يتطلب اشتراك بريميوم' }, icon('lock')));
+      const sw3 = (title, obj, key) => bhv(title, obj[key], (v) => { obj[key] = v; });
+      const premLimit = (key, title, sub, label, hi) => {
+        const c = gp[key];
+        return el('section', { class: 'panelc' },
+          trow(
+            el('div', {}, el('div', { class: 'tline' }, el('b', {}, title), el('span', { class: 'pbadge' }, icon('lock'), 'بريميوم')), el('small', { class: 'muted' }, sub)),
+            d.guildPremium
+              ? tg(c.enabled, (v) => { c.enabled = v; if (v && !c.actions.length) c.actions.push({ type: 'block' }); drawPane(); }, 'orange')
+              : el('span', { class: 'lockedsw', title: 'يتطلب اشتراك بريميوم' }, icon('lock'))),
+          d.guildPremium && c.enabled ? [
+            el('div', { class: 'sep' }),
+            stepper(label, c, 'max', 1, hi),
+            roleF('الرتب المستثناة (Exempt Roles)', c),
+            el('label', { class: 'flabel' }, 'الإجراءات المتخذة (Punishments)'),
+            actionsEditor(c.actions, d.channels, ro, touch),
+          ] : null);
+      };
+      const genPane = () => {
+        const ar = gp.antiRaid, al = gp.antiLinks, sp = gp.antiSpam;
+        return [
+                   premLimit('emojiLimit', 'حماية تكرار الإيموجي (Emoji Limit)', 'الحد من إرسال عدد كبير من الإيموجيات في رسالة واحدة', 'أقصى عدد إيموجي في الرسالة الواحدة', 100),
+          premLimit('lineLimit', 'حماية الرسائل الطويلة والأسطر (Line Limit)', 'منع إفساد وتمديد الشات بالرسائل الطويلة', 'أقصى عدد أسطر في الرسالة الواحدة', 100),
+          el('section', { class: 'panelc' },
+            trow(head('bolt', 'gold', 'مكافحة البوتات', 'منع البوتات غير المصرح بها'),
+              tg(gp.antiBots.enabled, (v) => { gp.antiBots.enabled = v; drawPane(); }, 'gold')),
+            gp.antiBots.enabled ? [
+              el('div', { class: 'sep' }),
+              selF('الإجراء مع البوت', gp.antiBots.botAction, GPR_ACT_L.slice(0, 2), (v) => { gp.antiBots.botAction = v; }),
+              selF('الإجراء مع المُضيف', gp.antiBots.adderAction, GPR_ACT_L, (v) => { gp.antiBots.adderAction = v; }),
+              roleF('الرتب المستثناة (Exempt Roles)', gp.antiBots),
+            ] : null),
+
+          el('section', { class: 'panelc' },
+            trow(head('users', 'blue', 'مكافحة الغارات', 'رصد الدخول الجماعي المشبوه وإرسال تحذير'),
+              tg(ar.enabled, (v) => { ar.enabled = v; drawPane(); }, 'blue')),
+            ar.enabled ? [
+              el('div', { class: 'sep' }),
+              stepper('عدد الحسابات في الدفعة', ar, 'count', 2, 100),
+              stepper('الفترة الزمنية (بالثواني)', ar, 'secs', 1, 300),
+              chanF('شات التحذير من الغارات', ar.channel, (v) => { ar.channel = v; }),
+              el('div', { class: 'sep' }),
+              el('div', { class: 'bhv' },
+                el('div', {}, el('b', {}, 'تطبيق إجراء على الحسابات'), el('small', { class: 'muted' }, 'اختياري — طرد أو حظر أو سجن الحسابات تلقائياً')),
+                tg(ar.actionOn, (v) => { ar.actionOn = v; drawPane(); }, 'red')),
+              ar.actionOn ? selF('الإجراء المتخذ', ar.action, GPR_ACT_L.filter(([v]) => ['kick', 'ban', 'prison'].includes(v)), (v) => { ar.action = v; }) : null,
+            ] : null),
+
+          el('section', { class: 'panelc' },
+            trow(head('link', 'blue', 'منع الروابط (Anti-Links)', 'حماية القنوات من الروابط الخارجية غير المصرح بها'),
+              tg(al.enabled, (v) => { al.enabled = v; drawPane(); }, 'blue')),
+            al.enabled ? [
+              el('div', { class: 'sep' }),
+              selF('الإجراء الإضافي', al.action, GPR_EXTRA_L, (v) => { al.action = v; }),
+              roleF('الرتب المستثناة', al),
+              chansF('الشاتات المستثناة', al),
+              el('div', { class: 'sep' }),
+              el('div', { class: 'bhv' },
+                el('div', {}, el('b', {}, 'حماية الرسائل المحولة (Forwarded)'), el('small', { class: 'muted' }, 'تفعيل حماية ومنع الروابط داخل الرسائل المحولة من شاتات أخرى')),
+                tg(al.forwarded, (v) => { al.forwarded = v; }, 'blue')),
+            ] : null),
+
+          el('section', { class: 'panelc' },
+            trow(head('shield', 'orange', 'منع السبام (Anti-Spam)', 'رصد وحظر تكرار الرسائل المزعجة والتحايل'),
+              tg(sp.enabled, (v) => { sp.enabled = v; drawPane(); }, 'orange')),
+            sp.enabled ? [
+              el('div', { class: 'sep' }),
+              el('div', { class: 'tbox' }, stepper('عدد التكرار المسموح', sp, 'repeat', 1, 20)),
+              slider('نسبة تطابق الرسائل المتتالية', 'نسبة تشابه الرسالة مع الرسائل السابقة للكشف عن التحايل (مثلاً إضافة نقاط أو مسافات).', sp, 'sim', 50, 100),
+              slider('نسبة تكرار الكلام الداخلي للرسالة', 'معدل تكرار نفس الجمل أو الكلمات داخل نفس الرسالة الواحدة (السبام الداخلي).', sp, 'inner', 30, 100),
+              selF('الإجراء الإضافي', sp.action, GPR_EXTRA_L, (v) => { sp.action = v; }),
+              roleF('الرتب المستثناة العامة', sp),
+              chansF('الشاتات المستثناة العامة من حماية السبام', sp),
+              
+            ] : null),
+
+          el('section', { class: 'panelc' },
+            head('shield', 'red', 'حماية تحديثات السيرفر', 'منع التغييرات غير المصرح بها على اسم أو أيقونة السيرفر'),
+            sw3('قفل اسم السيرفر', gp.serverUpdate, 'lockName'),
+            sw3('قفل أيقونة السيرفر', gp.serverUpdate, 'lockIcon'),
+            selF('الإجراء المتخذ', gp.serverUpdate.action, GPR_ACT_L, (v) => { gp.serverUpdate.action = v; }),
+            roleF('الرتب المستثناة', gp.serverUpdate)),
+
+          el('section', { class: 'panelc' },
+            trow(head('webhook', 'purple', 'حماية الويب هوك', 'منع إنشاء Webhooks جديدة من قبل غير المصرح لهم'),
+              tg(gp.webhook.enabled, (v) => { gp.webhook.enabled = v; drawPane(); }, 'purple')),
+            gp.webhook.enabled ? [
+              el('div', { class: 'sep' }),
+              selF('الإجراء المتخذ', gp.webhook.action, GPR_ACT_L, (v) => { gp.webhook.action = v; }),
+              roleF('الرتب المستثناة (Exempt Roles)', gp.webhook),
+            ] : null),
+
+          el('section', { class: 'panelc' },
+            head('grid', 'green', 'حماية الرومات (Channels)', 'منع إنشاء أو حذف الرومات'),
+            sw3('منع إنشاء الرومات', gp.channels, 'lockCreate'),
+            sw3('منع حذف الرومات', gp.channels, 'lockDelete'),
+            sw3('منع تعديل الرومات', gp.channels, 'lockEdit'),
+            selF('الإجراء المتخذ', gp.channels.action, GPR_ACT_L, (v) => { gp.channels.action = v; }),
+            roleF('الرتب المستثناة (Exempt Roles)', gp.channels)),
+
+          el('section', { class: 'panelc' },
+            head('lock', 'pink', 'حماية الرتب (Roles)', 'منع إنشاء، حذف، أو تعديل الرتب'),
+            sw3('منع الإنشاء', gp.roles, 'lockCreate'),
+            sw3('منع الحذف', gp.roles, 'lockDelete'),
+            sw3('منع التعديل', gp.roles, 'lockEdit'),
+            selF('الإجراء المتخذ', gp.roles.action, GPR_ACT_L, (v) => { gp.roles.action = v; }),
+            roleF('الرتب المستثناة (Exempt Roles)', gp.roles)),
+        ];
+      };
+      function drawPane() {
+        put(pane, tab === 'auto' ? autoPane() : genPane());
+        if (tab === 'auto') drawRules();
+      }
+
+      bar = saveBar(dirty, save, () => { ap = clone(apBase); gp = clone(gpBase); build(); });
+      put(box,
+        el('p', { class: 'eyebrow' }, 'SECURITY MODULE'),
+        el('h1', { class: 'greet' }, 'إعدادات الأمان'),
+        el('p', { class: 'lead' }, 'إدارة تصفية المحتوى وحماية السيرفر بشكل تلقائي'),
+        fl,
+        ro ? el('div', { class: 'notice show' }, 'تحتاج صلاحية إدارة السيرفر لتعديل هذه الإعدادات.') : null,
+        tabsBox, pane, bar.node);
+      drawTabs(); drawPane(); bar.refresh();
+    }
+
+    put(box, el('p', { class: 'muted center' }, 'جاري التحميل...'));
+    load();
+    return box;
+  }
   // ---- الحماية العامة (Discord AutoMod) ----
   const AM_LABEL = { 1: 'كلمات / روابط ممنوعة', 3: 'سبام', 4: 'قائمة كلمات جاهزة', 5: 'سبام المنشن', 6: 'بروفايل الأعضاء' };
   const AM_KINDS = [
@@ -7069,7 +9473,7 @@ loadCoin();
     ['spam', 'سبام عام (من ديسكورد)', ''],
   ];
 
-  function pageGeneral(r) {
+  function pageGeneralOld(r) {
     const gid = r.gid;
     const box = el('div', { class: 'page' });
     const fl = flasher();
@@ -7145,6 +9549,8 @@ loadCoin();
   // ===== إدارة الأوامر + حماية الصور =====
   Object.assign(ERRS, {
     bad_alias: 'الاختصار غير صالح (بدون مسافات، حتى 20 حرف، وبحد أقصى 10 اختصارات).',
+        short_alias: 'الاختصار لازم يكون 3 حروف على الأقل.',
+            bad_tkword: 'الاختصار غير صالح (كلمة وحدة بدون مسافات أو @ أو < أو >، حتى 20 حرف).',
     alias_taken: 'هذا الاختصار مستخدم لأمر آخر.',
     duplicate: 'هذه الصورة موجودة بالمكتبة.',
     not_found: 'العنصر غير موجود.',
@@ -7994,7 +10400,57 @@ loadCoin();
         ];
       };
       const drawPane = () => put(pane, tab === 'join' ? joinPane() : tab === 'image' ? imagePane() : leavePane());
+      if (!Array.isArray(cfg.vipIds)) cfg.vipIds = [];
 
+      // --- إيموجي الرصيد ---
+      const emoLock = ro || !d.guildPremium;
+      const emoIn = el('input', { class: 'inp', type: 'text', maxlength: 64, placeholder: '😀  أو  <:name:id>', disabled: emoLock, 'aria-label': 'إيموجي الرصيد' });
+      emoIn.value = cfg.emoji || '';
+      emoIn.addEventListener('input', () => { cfg.emoji = emoIn.value.trim(); touch(); });
+      const emoUrl = (id, anim) => `https://cdn.discordapp.com/emojis/${id}.${anim ? 'gif' : 'png'}?size=48`;
+      const STD_E = ['😀', '😂', '😍', '🔥', '👍', '❤️', '💯', '🎉', '😎', '🥰', '😭', '🙏', '👏', '✨', '⭐', '💎', '👑', '💰', '🪙', '🎁'];
+      const emoWrap = el('div', { class: 'emowrap' });
+      const emoBtn = el('button', {
+        class: 'btn ghost small', type: 'button', disabled: emoLock,
+        onclick: async (e) => {
+          e.stopPropagation();
+          const old = emoWrap.querySelector('.emopop');
+          if (old) { old.remove(); return; }
+          const pop = el('div', { class: 'emopop' }, el('small', { class: 'muted' }, 'جاري التحميل...'));
+          pop.addEventListener('click', (ev) => ev.stopPropagation());
+          emoWrap.append(pop);
+          document.addEventListener('click', () => pop.remove(), { once: true });
+          const choose = (v) => { emoIn.value = v; cfg.emoji = v; touch(); pop.remove(); };
+          let list = [];
+          try { list = (await api(`/api/guild/${gid}/emojis`)).list; } catch (_) {}
+          put(pop,
+            el('div', { class: 'emotitle' }, 'إيموجيات السيرفر'),
+            list.length
+              ? el('div', { class: 'emogrid' }, list.map((x) =>
+                  el('button', { type: 'button', class: 'emoit', title: x.name, onclick: () => choose(x.tag) },
+                    el('img', { src: emoUrl(x.id, x.animated), alt: x.name, width: 28, height: 28 }))))
+              : el('small', { class: 'muted' }, 'ما في إيموجيات مخصصة بالسيرفر'),
+            el('div', { class: 'emotitle' }, 'إيموجيات عادية'),
+            el('div', { class: 'emogrid' }, STD_E.map((s) => el('button', { type: 'button', class: 'emoit', onclick: () => choose(s) }, s))));
+        },
+      }, icon('smile'), 'اختيار إيموجي');
+      emoWrap.append(emoBtn);
+
+      // --- أعضاء المكافأة المميزة ---
+      const idIn = el('input', { class: 'inp', type: 'text', inputmode: 'numeric', placeholder: 'ايدي العضو (User ID)', disabled: emoLock, 'aria-label': 'ايدي العضو' });
+      const idList = el('div', { class: 'chips' });
+      const drawIds = () => put(idList, cfg.vipIds.map((id, i) =>
+        el('span', { class: 'achip' }, id,
+          el('button', { type: 'button', class: 'x', disabled: ro, 'aria-label': 'إزالة', onclick: () => { cfg.vipIds.splice(i, 1); drawIds(); touch(); } }, '×'))));
+      const addId = () => {
+        const v = idIn.value.trim();
+        if (!/^\d{15,25}$/.test(v)) return fl.show(ERRS.bad_user_id, false);
+        if (cfg.vipIds.includes(v)) { idIn.value = ''; return; }
+        if (cfg.vipIds.length >= 50) return fl.show('الحد الأقصى 50 عضو.', false);
+        cfg.vipIds.push(v); idIn.value = ''; drawIds(); touch();
+      };
+      idIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addId(); } });
+      drawIds();
       bar = saveBar(dirty, save, () => { cfg = clone(base); build(); });
       put(box,
         el('p', { class: 'eyebrow' }, 'WELCOME MODULE'),
@@ -8034,6 +10490,7 @@ loadCoin();
     embed_chars: 'عدد الأحرف تجاوز حد باقتك.',
     embed_bytes: 'حجم الإيمبد تجاوز حد باقتك.',
     empty_embed: 'الإيمبد فاضي، اكتب فيه محتوى.',
+        bad_block: 'في بلوك ناقص (النص أو الرابط مطلوب).',
     no_channel: 'اختر القناة أولاً.',
     role_dangerous: 'ما بنسمح بربط رتبة فيها صلاحيات إدارية بزر.',
   });
@@ -8203,8 +10660,9 @@ loadCoin();
     const e = core.embed || {};
     let chars = core.content.length + String(e.title || '').length + String(e.description || '').length + String((e.author || {}).name || '').length + String((e.footer || {}).text || '').length;
     for (const f of e.fields || []) chars += f.name.length + f.value.length;
+      for (const b of d.blocks || []) chars += String(b.content || '').length + (b.lines || []).join('').length;
     for (const a of (d.kind !== 'none' ? d.actions || [] : [])) chars += String(a.label || '').length;
-    const s = JSON.stringify({ content: core.content, embed: core.embed });
+    const s = JSON.stringify({ content: core.content, embed: core.embed, blocks: d.blocks || [] });
     const bytes = typeof Buffer !== 'undefined' ? Buffer.byteLength(s) : new TextEncoder().encode(s).length;
     return { chars, bytes };
   }
@@ -8217,7 +10675,7 @@ loadCoin();
     const PAL = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#f98a77', '#2b2d31', '#ffffff'];
     const STYLES = [['primary', '#5865f2'], ['secondary', '#4f545c'], ['success', '#57f287'], ['danger', '#ed4245']];
     const KIND_L = { none: 'بدون', button: 'زر', select: 'قائمة' };
-    const blank = () => ({ id: '', name: 'إيمبد جديد', channel: null, content: '', mode: 'classic', color: '#fbbf24', author: { name: '', icon: '', url: '' }, title: '', titleUrl: '', description: '', thumbnail: '', fields: [], image: '', footer: { text: '', icon: '' }, timestamp: false, kind: 'none', placeholder: '', actions: [] });
+    const blank = () => ({ id: '', name: 'إيمبد جديد', channel: null, content: '', mode: 'classic', color: '#fbbf24', author: { name: '', icon: '', url: '' }, title: '', titleUrl: '', description: '', thumbnail: '', fields: [], image: '', footer: { text: '', icon: '' }, timestamp: false, transparent: false, spoiler: false, blocks: [], kind: 'none', placeholder: '', actions: [] });
     const dirty = () => cur && JSON.stringify(cur) !== JSON.stringify(baseCur);
     const touch = () => { window.onbeforeunload = dirty() ? () => true : null; };
     const listBox = el('div', { class: 'embgrid' });
@@ -8245,8 +10703,19 @@ loadCoin();
     function drawEditor() {
       if (!cur) { put(edBox); return; }
       const ro = !d.canManage, lim = d.limits;
+                  const normB = (b) => {
+        if (b.type === 'section') {
+          b.lines = Array.isArray(b.lines) && b.lines.length ? b.lines : [''];
+          b.accessory = b.accessory === 'button' ? 'button' : 'image';
+          b.thumbnail = b.thumbnail || '';
+          b.button = Object.assign({ label: '', style: 'primary', url: '', reply: '', roleId: '' }, b.button || {});
+        }
+      };
+      for (const o of [cur, baseCur]) { o.blocks = o.blocks || []; o.transparent = !!o.transparent; o.spoiler = !!o.spoiler; o.blocks.forEach(normB); }
+      let drawPv = () => {};
       const chars = el('span', {}), bytes = el('span', {});
       const upd = () => {
+                drawPv();
         const m = embMeasure(cur);
         chars.textContent = `${m.chars}/${lim.chars}`; bytes.textContent = `${(m.bytes / 1024).toFixed(1)}KB/${(lim.bytes / 1024).toFixed(1)}KB`;
         chars.parentNode && chars.parentNode.classList.toggle('over', m.chars > lim.chars);
@@ -8264,8 +10733,8 @@ loadCoin();
 
       const modeBox = el('div', { class: 'mtabs' });
       const drawMode = () => put(modeBox,
-        el('button', { type: 'button', class: 'mtab' + (cur.mode === 'classic' ? ' on' : ''), disabled: ro, onclick: () => { cur.mode = 'classic'; drawMode(); upd(); } }, icon('grid'), 'إيمبد كلاسيك'),
-        el('button', { type: 'button', class: 'mtab' + (cur.mode === 'v2' ? ' on' : ''), disabled: ro, onclick: () => { cur.mode = 'v2'; drawMode(); upd(); } }, icon('grid'), 'مكونات V2', el('em', { class: 'newb' }, 'جديد')));
+        el('button', { type: 'button', class: 'mtab' + (cur.mode === 'classic' ? ' on' : ''), disabled: ro, onclick: () => { cur.mode = 'classic'; touch(); drawEditor(); } }, icon('grid'), 'إيمبد كلاسيك'),
+        el('button', { type: 'button', class: 'mtab' + (cur.mode === 'v2' ? ' on' : ''), disabled: ro, onclick: () => { cur.mode = 'v2'; touch(); drawEditor(); } }, icon('grid'), 'مكونات V2', el('em', { class: 'newb' }, 'جديد')));
 
       const fieldsBox = el('div', { class: 'stack' });
       const drawFields = () => put(fieldsBox, cur.fields.map((f, i) => el('div', { class: 'subrow' },
@@ -8306,18 +10775,205 @@ loadCoin();
         d.channels.map((c) => el('option', { value: c.id, selected: c.id === cur.channel }, '# ' + c.name)));
       chSel.addEventListener('change', () => { cur.channel = chSel.value || null; upd(); });
       const ta = (obj, key, ph, max, rows) => bind(el('textarea', { class: 'inp ta', rows, placeholder: ph, maxlength: max, 'aria-label': ph }), obj, key);
+           const v2Box = el('div', { class: 'v2box' });
+                 
+      const pv = el('div', { class: 'rpprev' });
+      const probBox = el('div', { class: 'v2alert hidden', role: 'alert' }, icon('alert'),
+        el('div', {}, el('b', {}), el('small', {}, 'يرجى إكمال الحقول المطلوبة أعلاه لتتمكن من الحفظ والإرسال.')));
+      const isPrem = !!d.guildPremium;
+      const MAXB = isPrem ? 30 : 10, MAXK = isPrem ? 10 : 3, MAXL = isPrem ? 3 : 2;
+      const okU = (u) => isImgRef(u);
+      const cntT = (t) => cur.blocks.filter((b) => b.type === t).length;
+      const BLK = [['text', 'نص', 'textT'], ['sep', 'فاصل', 'dashed'], ['section', 'قسم', 'menu'], ['gallery', 'معرض صور', 'grid']];
+      const BT = { text: ['نص', 'textT'], sep: ['فاصل', 'dashed'], section: ['قسم', 'menu'], gallery: ['معرض وسائط', 'grid'] };
+      const SSTY = [['primary', 'أزرق'], ['secondary', 'رمادي'], ['success', 'أخضر'], ['danger', 'أحمر'], ['link', 'رابط']];
+      const freeMsg = () => `وصلت للحد الأقصى المتاح في الباقة المجانية (${(lim.bytes / 1024).toFixed(1)}KB / ${MAXB} مكونات / ${NF(lim.chars)} حرف).`;
 
+      // مودال الحد الأقصى
+      const limitModal = (msg) => {
+        const done = () => { ov.remove(); document.removeEventListener('keydown', onKey); };
+        const onKey = (e) => { if (e.key === 'Escape') done(); };
+        const ov = el('div', { class: 'cm-ov', role: 'dialog', 'aria-modal': 'true', onclick: (e) => { if (e.target === ov) done(); } },
+          el('div', { class: 'cm-box lm' },
+            el('div', { class: 'rowbar' },
+              el('h3', {}, icon('alert'), 'لا يمكن إضافة هذا المكون'),
+              el('button', { class: 'btn ghost small', type: 'button', 'aria-label': 'إغلاق', onclick: done }, icon('close'))),
+            el('p', {}, msg),
+            el('div', { class: 'lm-up' },
+              el('b', {}, icon('crown'), 'ترقية الباقة لفتح المساحة والمكونات الكاملة:'),
+              el('ul', {},
+                el('li', {}, 'سعة رسائل سحابية تصل إلى 10KB (10,000 بايت)'),
+                el('li', {}, 'إضافة حتى 25 مكون تفاعلي للرسالة (يبدأ من 5 فقط في المجاني)'),
+                el('li', {}, 'إضافة حتى 10 صور وأقسام ومعارض (3 في المجاني)'),
+                el('li', {}, 'كتابة حتى 6,000 حرف للرسالة'))),
+            el('a', { class: 'btn primary wide', href: `#/g/${gid}/premium`, onclick: done }, icon('crown'), 'ترقية إلى البريميوم الآن')));
+        document.body.append(ov);
+        document.addEventListener('keydown', onKey);
+      };
+      const deny = () => (isPrem ? fl.show('وصلت للحد الأقصى المسموح للرسالة.', false) : limitModal(freeMsg()));
+
+      // فحص قبل الحفظ
+      const v2Problem = () => {
+        if (cur.mode !== 'v2') return null;
+        for (const b of cur.blocks) {
+          if (b.type === 'text' && !b.content.trim()) return 'عنصر "نص" فاضي، اكتب فيه شي أو احذفه.';
+          if (b.type === 'section') {
+            if (!b.lines.some((t) => t.trim())) return 'عنصر "قسم" يحتاج نص.';
+            const bad = b.accessory === 'button'
+              ? !b.button.label.trim() || (b.button.style === 'link' && !okU(b.button.url))
+              : !okU(b.thumbnail);
+            if (bad) return 'تنبيه: عنصر "قسم" يتطلب إضافة ملحق (زر أو صورة مصغرة)، يرجى تحديد زر برابط/إجراء أو وضع رابط صورة أو اختيار عنصر "نص" بدلاً منه.';
+          }
+          if (b.type === 'gallery' && !b.items.some(okU)) return 'عنصر "معرض صور" يحتاج رابط صورة واحد على الأقل.';
+        }
+        return null;
+      };
+
+      // المعاينة
+      drawPv = () => {
+        if (cur.mode !== 'v2') return;
+        put(pv, el('div', { class: 'rpmsg' },
+          el('div', { class: 'rpname' }, 'البوت', el('span', { class: 'rpbot' }, 'BOT')),
+          el('div', { class: 'rpemb', style: 'border-inline-start-color:' + 'transparent' + (cur.spoiler ? ';filter:blur(3px)' : '') },
+            cur.blocks.map((b) =>
+              b.type === 'text' ? el('p', {}, b.content)
+              : b.type === 'sep' ? (b.divider ? el('hr', { style: b.spacing === 2 ? 'margin:12px 0' : '' }) : el('div', { style: 'height:' + (b.spacing === 2 ? 16 : 8) + 'px' }))
+              : b.type === 'section' ? el('div', { class: 'subrow' },
+                  el('div', { style: 'flex:1;min-width:0' }, b.lines.map((t) => el('p', {}, t))),
+                  b.accessory === 'button'
+                    ? el('span', { class: 'rpbtn s-' + (b.button.style === 'link' ? 'secondary' : b.button.style) }, b.button.label || 'زر')
+                    : (okU(b.thumbnail) ? el('img', { src: b.thumbnail, alt: '', width: 64, height: 64, style: 'border-radius:8px;object-fit:cover' }) : null))
+              : el('div', { class: 'rpgal' }, b.items.filter(okU).map((u) => el('img', { src: u, alt: '' })))))));
+      };
+
+      const drawV2 = () => {
+        const chk = (label, key) => {
+          const c = el('input', { type: 'checkbox', disabled: ro });
+          c.checked = !!cur[key];
+          c.addEventListener('change', () => { cur[key] = c.checked; upd(); });
+          return el('label', { class: 'chk' }, c, label);
+        };
+        const blocked = (type) => {
+          const m = embMeasure(cur);
+          return cur.blocks.length >= MAXB || m.chars >= lim.chars || m.bytes >= lim.bytes ||
+            ((type === 'section' || type === 'gallery') && cntT(type) >= MAXK);
+        };
+        const mkB = {
+          text: () => ({ type: 'text', content: '' }),
+          sep: () => ({ type: 'sep', divider: true, spacing: 1 }),
+          section: () => ({ type: 'section', lines: [''], accessory: 'image', thumbnail: '', button: { label: '', style: 'primary', url: '', reply: '', roleId: '' } }),
+          gallery: () => ({ type: 'gallery', items: [''] }),
+        };
+        const addB = (type) => {
+          if (ro) return;
+          if (blocked(type)) return deny();
+          cur.blocks.push(mkB[type]());
+          drawV2(); upd();
+        };
+
+        const card = (b, i) => {
+          const [tl, ic] = BT[b.type];
+          const move = (dir) => {
+            const j = i + dir;
+            if (j < 0 || j >= cur.blocks.length) return;
+            [cur.blocks[i], cur.blocks[j]] = [cur.blocks[j], cur.blocks[i]];
+            drawV2(); upd();
+          };
+          let body;
+          if (b.type === 'text') {
+            body = ta(b, 'content', 'أكتب النص هنا... (يدعم Markdown: **عريض** *مائل* # عنوان > اقتباس)', 4000, 5);
+          } else if (b.type === 'sep') {
+            const c = el('input', { type: 'checkbox', disabled: ro });
+            c.checked = !!b.divider;
+            c.addEventListener('change', () => { b.divider = c.checked; upd(); });
+            body = [
+              el('label', { class: 'chk' }, c, 'خط فاصل'),
+              el('div', { class: 'rowbar' }, el('span', { class: 'flabel' }, 'التباعد'),
+                el('div', { class: 'mtabs' }, [[1, 'صغير (1)'], [2, 'كبير (2)']].map(([v, l]) =>
+                  el('button', { type: 'button', class: 'mtab' + (b.spacing === v ? ' on' : ''), disabled: ro, onclick: () => { b.spacing = v; drawV2(); upd(); } }, l)))),
+            ];
+          } else if (b.type === 'section') {
+            const rs = el('select', { class: 'sel full', disabled: ro, 'aria-label': 'رتبة عند الضغط' },
+              el('option', { value: '' }, 'بدون رتبة (رد فقط)'),
+              d.roles.map((x) => el('option', { value: x.id, selected: x.id === b.button.roleId }, '@ ' + x.name)));
+            rs.addEventListener('change', () => { b.button.roleId = rs.value; upd(); });
+            body = [
+              el('span', { class: 'flabel' }, `نص داخل القسم (حتى ${MAXL} أسطر)`),
+              b.lines.map((_, k) => el('div', { class: 'subrow' },
+                ta(b.lines, k, 'نص القسم... (يدعم Markdown: # عنوان أو **عريض**)', 1000, 3),
+                b.lines.length > 1 ? el('button', { class: 'btn ghost small danger', type: 'button', disabled: ro, 'aria-label': 'حذف السطر', onclick: () => { b.lines.splice(k, 1); drawV2(); upd(); } }, icon('trash')) : null)),
+              el('button', {
+                class: 'btn ghost small' + (b.lines.length >= MAXL ? ' dim' : ''), type: 'button', disabled: ro,
+                onclick: () => { if (b.lines.length >= MAXL) return deny(); b.lines.push(''); drawV2(); upd(); },
+              }, icon('plus'), `إضافة سطر (${b.lines.length}/${MAXL})`),
+              el('div', { class: 'sep' }),
+              el('div', { class: 'mtabs full' }, [['image', 'صورة', 'image'], ['button', 'زر جانبي', 'pointer']].map(([k, l, ico]) =>
+                el('button', { type: 'button', class: 'mtab' + (b.accessory === k ? ' on' : ''), disabled: ro, onclick: () => { b.accessory = k; drawV2(); upd(); } }, icon(ico), l))),
+              b.accessory === 'image'
+                ? [el('span', { class: 'reqb' }, '*مطلوبة'), imgSlot(gid, b, 'thumbnail', { label: 'صورة مصغرة', ro, fl, onChange: upd })]
+                : [
+                    tin(b.button, 'label', 'نص الزر', 80),
+                    el('div', { class: 'rpstyles' }, SSTY.map(([s, l]) =>
+                      el('button', { type: 'button', class: 'rpst s-' + s + (b.button.style === s ? ' on' : ''), disabled: ro, onclick: () => { b.button.style = s; drawV2(); upd(); } }, l))),
+                    b.button.style === 'link'
+                      ? tin(b.button, 'url', 'رابط الزر (https)', 500)
+                      : [ta(b.button, 'reply', 'الرد عند الضغط (يظهر للعضو فقط)', 2000, 2), rs],
+                  ],
+            ];
+          } else {
+                       const full = b.items.length >= MAXK;
+            body = [
+              el('span', { class: 'flabel' }, `عناصر المعرض (حتى ${MAXK} صور)`),
+              el('div', { class: 'galrow' },
+                b.items.map((_, k) => el('div', { class: 'galcell' },
+                  imgSlot(gid, b.items, k, { label: `صورة ${k + 1}`, ro, fl, onChange: upd }),
+                  el('button', { class: 'bx galx', type: 'button', disabled: ro || b.items.length <= 1, 'aria-label': 'حذف', onclick: () => { b.items.splice(k, 1); drawV2(); upd(); } }, icon('close')))),
+                el('button', { class: 'idrop gadd' + (full ? ' dim' : ''), type: 'button', disabled: ro,
+                  onclick: () => { if (full) return deny(); b.items.push(''); drawV2(); upd(); } },
+                  icon('plus'), el('small', {}, full ? `الحد الأقصى (${MAXK})` : `إضافة صورة (${b.items.length}/${MAXK})`))),
+            ];
+          }
+          return el('div', { class: 'bcard' },
+            el('div', { class: 'bhead' },
+              el('span', { class: 'btitle' }, icon(ic), tl),
+              el('div', { class: 'bctl' },
+                el('button', { class: 'bmv', type: 'button', disabled: ro || i === 0, 'aria-label': 'فوق', onclick: () => move(-1) }, '↑'),
+                el('button', { class: 'bmv', type: 'button', disabled: ro || i === cur.blocks.length - 1, 'aria-label': 'تحت', onclick: () => move(1) }, '↓')),
+              el('button', { class: 'bx', type: 'button', disabled: ro, 'aria-label': 'حذف البلوك', onclick: () => { cur.blocks.splice(i, 1); drawV2(); upd(); } }, icon('close'))),
+            el('div', { class: 'bbody' }, body));
+        };
+
+        put(v2Box,
+          el('div', { class: 'v2opts' }, chk('وضع الشفافية', 'transparent'), el('label', { class: 'chk' }, 'لون الإيمبد', colorIn), chk('مخفي (Spoiler)', 'spoiler')),
+          el('div', { class: 'sep' }),
+          cur.blocks.length ? el('div', { class: 'stack' }, cur.blocks.map(card)) : null,
+          el('div', { class: 'btnrow' },
+            BLK.map(([t, l, ico]) => {
+              const n = (t === 'section' || t === 'gallery') ? cntT(t) : null;
+              return el('button', { class: 'btn ghost small' + (n !== null && n >= MAXK ? ' dim' : ''), type: 'button', disabled: ro, onclick: () => addB(t) },
+                icon(ico), '+ ' + l + (n !== null ? ` (${n}/${MAXK})` : ''));
+            }),
+            el('button', {
+              class: 'btn ghost small', type: 'button', disabled: ro,
+              onclick: () => { if (!isPrem) return limitModal('صف الأزرار متاح لسيرفرات البريميوم فقط.'); cur.kind = 'button'; drawEditor(); },
+            }, icon('pointer'), '+ صف أزرار', el('span', { class: 'pbadge' }, icon('crown'), 'بريميوم'))));
+        drawPv();
+      };
+      drawV2();
       put(embbox,
         el('div', { class: 'subrow' }, tin(cur.author, 'name', 'اسم الكاتب', 256), tin(cur.author, 'icon', 'رابط أيقونة الكاتب', 500), tin(cur.author, 'url', 'رابط الكاتب', 500)),
         el('div', { class: 'subrow' }, tin(cur, 'title', 'عنوان الإيمبد', 256), tin(cur, 'titleUrl', 'رابط العنوان (اختياري)', 500)),
         ta(cur, 'description', 'وصف الإيمبد', 4096, 5),
-        tin(cur, 'thumbnail', 'رابط الصورة المصغرة (Thumbnail)', 500),
+        imgSlot(gid, cur, 'thumbnail', { label: 'صورة مصغرة', ro, fl, onChange: upd }),
         fieldsBox, addFieldBtn,
-        tin(cur, 'image', 'رابط الصورة الكبيرة', 500),
-        el('div', { class: 'subrow' }, tin(cur.footer, 'text', 'نص الفوتر', 2048), tin(cur.footer, 'icon', 'رابط أيقونة الفوتر', 500)),
+        imgSlot(gid, cur, 'image', { label: 'صورة كبيرة', ro, fl, onChange: upd }),
+        el('div', { class: 'subrow' }, tin(cur.footer, 'text', 'نص الفوتر', 2048), imgSlot(gid, cur.footer, 'icon', { label: 'أيقونة الفوتر', ro, fl, onChange: upd })),
         el('label', { class: 'chk' }, (() => { const c = el('input', { type: 'checkbox', disabled: ro }); c.checked = !!cur.timestamp; c.addEventListener('change', () => { cur.timestamp = c.checked; upd(); }); return c; })(), 'إظهار وقت الإرسال'));
 
       async function saveCur() {
+        const prob = v2Problem();
+        probBox.classList.toggle('hidden', !prob);
+        if (prob) { probBox.querySelector('b').textContent = prob; fl.show('أكمل الحقول المطلوبة قبل الحفظ.', false); return false; }
         try {
           const isNew = !cur.id;
           const j = isNew ? await apiSend('POST', `/api/guild/${gid}/embeds`, { embed: cur }) : await apiSend('PUT', `/api/guild/${gid}/embeds/${cur.id}`, { embed: cur });
@@ -8331,7 +10987,12 @@ loadCoin();
       async function sendCur() {
         if (!cur.channel) { fl.show(ERRS.no_channel, false); return; }
         if ((dirty() || !cur.id) && !(await saveCur())) return;
-        try { await apiSend('POST', `/api/guild/${gid}/embeds/${cur.id}/send`); fl.show('تم الإرسال للقناة ✅'); }
+        try {
+        const j = await apiSend('POST', `/api/guild/${gid}/embeds/${cur.id}/send`);
+        for (const o of [cur, baseCur, list.find((e) => e.id === cur.id)]) if (o) { o.messageId = j.messageId; o.msgChannel = j.msgChannel; }
+        fl.show(j.updated ? 'تم تحديث الإيمبد ✅' : 'تم إرسال الإيمبد ✅');
+        drawEditor();
+      }
         catch (e) { fl.show(errText(e), false); }
       }
       async function delCur() {
@@ -8357,13 +11018,12 @@ loadCoin();
           el('label', { class: 'flabel' }, 'محتوى الرسالة ', el('small', { class: 'muted' }, '(اختياري — نص فوق الإيمبد)')),
           ta(cur, 'content', 'اكتب نص الرسالة هنا...', 2000, 3),
           modeBox,
-          el('div', { class: 'colorrow2' }, el('span', { class: 'flabel' }, 'لون الشريط الجانبي'), sw, colorIn),
-          embbox,
-          el('div', { class: 'flabel' }, 'الأزرار والقوائم (رد تلقائي عند الضغط)'),
-          kindBox, phBox, actBox, addActBox,
+
+          cur.mode === 'v2' ? null : el('div', { class: 'colorrow2' }, el('span', { class: 'flabel' }, 'لون الشريط الجانبي'), sw, colorIn),          cur.mode === 'v2' ? [v2Box, probBox] : embbox,
+          cur.mode === 'v2' ? [v2Box, probBox] : embbox,          cur.mode === 'v2' ? pv : null,
           el('div', { class: 'btnrow end' },
             el('button', { class: 'btn ghost danger', type: 'button', disabled: ro, onclick: delCur }, icon('trash'), 'حذف'),
-            el('button', { class: 'btn ghost', type: 'button', disabled: ro, onclick: sendCur }, icon('send'), 'إرسال للقناة'),
+            el('button', { class: 'btn ghost', type: 'button', disabled: ro, onclick: sendCur }, icon('send'), (cur.messageId && cur.msgChannel === cur.channel) ? 'تحديث الإيمبد' : 'إرسال الإيمبد'),
             el('button', { class: 'btn primary', type: 'button', disabled: ro, onclick: saveCur }, 'حفظ'))));
       paintBox(); drawSw(); drawMode(); drawFields(); drawAddField(); drawKind(); drawActs(); upd();
     }
@@ -8518,7 +11178,7 @@ loadCoin();
         const c = cur, e = embCore(c).embed;
         const lab = (x) => [x.emoji, x.label].filter(Boolean).join(' ') || '…';
         put(prev, el('div', { class: 'rpmsg' },
-          el('div', { class: 'rpname' }, 'البوت', el('span', { class: 'rpbot' }, 'BOT')),
+          el('div', { class: 'rpname' }, d.bot ? el('img', { src: d.bot.avatar, alt: '', width: 28, height: 28, style: 'border-radius:50%;object-fit:cover' }) : null, d.bot ? d.bot.name : 'البوت', el('span', { class: 'rpbot' }, 'BOT')),
           c.content ? el('div', {}, c.content) : null,
           e ? el('div', { class: 'rpemb', style: 'border-inline-start-color:' + c.color },
             c.author.name ? el('small', {}, c.author.name) : null,
@@ -8551,9 +11211,8 @@ loadCoin();
       colorIn.addEventListener('input', () => { cur.color = colorIn.value; paintBox(); drawSw(); upd(); });
       const modeBox = el('div', { class: 'mtabs' });
       const drawMode = () => put(modeBox,
-        el('button', { type: 'button', class: 'mtab' + (cur.mode === 'classic' ? ' on' : ''), disabled: ro, onclick: () => { cur.mode = 'classic'; drawMode(); upd(); } }, icon('grid'), 'إيمبد كلاسيك'),
-        el('button', { type: 'button', class: 'mtab' + (cur.mode === 'v2' ? ' on' : ''), disabled: ro, onclick: () => { cur.mode = 'v2'; drawMode(); upd(); } }, icon('grid'), 'مكونات V2', el('em', { class: 'newb' }, 'جديد')));
-
+                el('button', { type: 'button', class: 'mtab' + (cur.mode === 'classic' ? ' on' : ''), disabled: ro, onclick: () => { cur.mode = 'classic'; touch(); drawEditor(); } }, icon('grid'), 'إيمبد كلاسيك'),
+        el('button', { type: 'button', class: 'mtab' + (cur.mode === 'v2' ? ' on' : ''), disabled: ro, onclick: () => { cur.mode = 'v2'; touch(); drawEditor(); } }, icon('grid'), 'مكونات V2', el('em', { class: 'newb' }, 'جديد')));
       // الحقول الفرعية
       const fieldsBox = el('div', { class: 'stack' });
       const addFieldBtn = el('div', {});
@@ -8607,7 +11266,7 @@ loadCoin();
       chSel.addEventListener('change', () => { cur.channel = chSel.value || null; upd(); });
 
       put(embbox,
-        el('div', { class: 'subrow' }, tin(cur.author, 'name', 'اسم الكاتب', 256), tin(cur.author, 'icon', 'رابط أيقونة الكاتب', 500), tin(cur.author, 'url', 'رابط الكاتب', 500)),
+        el('div', { class: 'subrow' }, tin(cur.author, 'name', 'اسم الكاتب', 256), imgSlot(gid, cur.author, 'icon', { label: 'أيقونة الكاتب', ro, fl, onChange: upd }), tin(cur.author, 'url', 'رابط الكاتب', 500)),
         el('div', { class: 'subrow' }, tin(cur, 'title', 'عنوان الإيمبد', 256), tin(cur, 'titleUrl', 'رابط العنوان (اختياري)', 500)),
         ta(cur, 'description', 'وصف الإيمبد', 4096, 5),
         tin(cur, 'thumbnail', 'رابط الصورة المصغرة (Thumbnail)', 500),
@@ -8615,8 +11274,9 @@ loadCoin();
         tin(cur, 'image', 'رابط الصورة الكبيرة', 500),
         el('div', { class: 'subrow' }, tin(cur.footer, 'text', 'نص الفوتر', 2048), tin(cur.footer, 'icon', 'رابط أيقونة الفوتر', 500)),
         el('label', { class: 'chk' }, (() => { const c = el('input', { type: 'checkbox', disabled: ro }); c.checked = !!cur.timestamp; c.addEventListener('change', () => { cur.timestamp = c.checked; upd(); }); return c; })(), 'إظهار وقت الإرسال'));
-
-      async function saveCur() {
+      
+      
+        async function saveCur() {
         try {
           const isNew = !cur.id;
           const j = isNew ? await apiSend('POST', `/api/guild/${gid}/rolepanels`, { panel: cur }) : await apiSend('PUT', `/api/guild/${gid}/rolepanels/${cur.id}`, { panel: cur });
@@ -8664,7 +11324,7 @@ loadCoin();
           el('label', { class: 'flabel' }, 'محتوى الرسالة ', el('small', { class: 'muted' }, '(اختياري — نص فوق الإيمبد)')),
           ta(cur, 'content', 'اكتب نص الرسالة هنا...', 2000, 3),
           modeBox,
-          el('div', { class: 'colorrow2' }, el('span', { class: 'flabel' }, 'لون الشريط الجانبي'), sw, colorIn),
+          cur.mode === 'v2' ? null : el('div', { class: 'colorrow2' }, el('span', { class: 'flabel' }, 'لون الشريط الجانبي'), sw, colorIn),
           embbox,
           el('div', { class: 'flabel' }, 'الرتب ', cnt),
           rolesBox, addRoleBox,
@@ -8984,7 +11644,7 @@ loadCoin();
     const gid = r.gid;
     const box = el('div', { class: 'page' });
     const fl = flasher();
-    let d = null, cfg = null, base = null, bar = null, top = 'general', sub = 'general';
+    let d = null, cfg = null, base = null, bar = null, top = 'general', sub = 'general', gsub = 'general';
     const dirty = () => JSON.stringify(cfg) !== JSON.stringify(base);
     const touch = () => bar && bar.refresh();
 
@@ -9129,22 +11789,347 @@ loadCoin();
           lbl('المحظورين (BlackList)', 'badc'),
           multiPick(d.roles, cfg.perms.blockRoles, 'لا يوجد حظر', ro, (v) => { cfg.perms.blockRoles = v; touch(); }));
       };
-
-      const drawPane = () => put(pane, sub === 'general' ? generalPane() : sub === 'ctl' ? ctlPane() : permPane());
-      const master = el('section', { class: 'panelc masterc' },
+      // ---- الإيموجيات ----
+      const emoPane = () => {
+        const rows = el('div', { class: 'stack' });
+        const STD = ['😀', '😂', '😍', '🔥', '👍', '❤️', '💯', '🎉', '😎', '✨', '⭐', '💎', '👑', '🔒', '🔓', '👥', '✏️', '🗑️', '🌍', '📞', '⛔', '✅', '🚫', '🔁'];
+        const url = (id, a) => `https://cdn.discordapp.com/emojis/${id}.${a ? 'gif' : 'png'}?size=48`;
+        const view = (v) => { const m = /^<(a?):(\w+):(\d+)>$/.exec(v || ''); return m ? el('img', { src: url(m[3], m[1]), alt: m[2], width: 28, height: 28 }) : document.createTextNode(v || '❔'); };
+        let lists = null;
+        const getLists = async () => {
+          if (lists) return lists;
+          const [s, a] = await Promise.all([
+            api(`/api/guild/${gid}/emojis`).catch(() => ({ list: [] })),
+            api(`/api/guild/${gid}/appemojis`).catch(() => ({ list: [] })),
+          ]);
+          return (lists = { server: a.hub || [], app: a.list });
+        };
+        const grid = (list, choose) => el('div', { class: 'emogrid' }, list.map((x) =>
+          el('button', { type: 'button', class: 'emoit', title: x.name, onclick: () => choose(x.tag) }, el('img', { src: url(x.id, x.animated), alt: x.name, width: 28, height: 28 }))));
+        const draw = () => put(rows, d.buttons.map((b) => {
+          const wrap = el('div', { class: 'emowrap' });
+          wrap.append(el('button', {
+            class: 'btn ghost small', type: 'button', disabled: ro,
+            onclick: async (e) => {
+              e.stopPropagation();
+              const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); };
+              const onKey = (ev) => { if (ev.key === 'Escape') close(); };
+              const body = el('div', { class: 'emomodal' }, el('small', { class: 'muted' }, 'جاري التحميل...'));
+              const ov = el('div', { class: 'cm-ov', role: 'dialog', 'aria-modal': 'true', onclick: (ev) => { if (ev.target === ov) close(); } },
+                el('div', { class: 'cm-box lm' },
+                  el('div', { class: 'rowbar' }, el('h3', {}, 'اختر إيموجي: ' + b.label),
+                    el('button', { class: 'btn ghost small', type: 'button', 'aria-label': 'إغلاق', onclick: close }, icon('close'))),
+                  body));
+              document.body.append(ov);
+              document.addEventListener('keydown', onKey);
+              const choose = (v) => { cfg.emojis[b.act] = v; touch(); draw(); close(); };
+              const L = await getLists();
+              put(body,
+                el('div', { class: 'emotitle' }, 'إيموجيات سيرفر OPS (تعمل بكل السيرفرات)'),
+                L.server.length ? grid(L.server, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
+                el('div', { class: 'emotitle' }, 'إيموجيات البوت (تعمل بكل السيرفرات)'),
+                L.app.length ? grid(L.app, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
+                el('div', { class: 'emotitle' }, 'إيموجيات عادية'),
+                el('div', { class: 'emogrid' }, STD.map((s) => el('button', { type: 'button', class: 'emoit', onclick: () => choose(s) }, s))));
+            },
+          }, icon('smile'), 'تغيير'));
+          return el('div', { class: 'bhv' },
+            el('div', { class: 'mrow' }, el('span', { class: 'hbox gold' }, view(cfg.emojis[b.act])), el('b', {}, b.label)),
+            wrap);
+        }));
+        draw();        const tkBox = el('div', { class: 'stack' });
+        (async () => {
+          let j;
+          try { j = await api('/api/tkemojis'); } catch (_) { return; }
+          if (!j.isOwner) return;
+          const drawTk = () => put(tkBox, j.items.map(([key, label]) => {
+            const wrap = el('div', { class: 'emowrap' });
+            wrap.append(el('button', {
+              class: 'btn ghost small', type: 'button',
+              onclick: async (e) => {
+                e.stopPropagation();
+                const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); };
+                const onKey = (ev) => { if (ev.key === 'Escape') close(); };
+                const body = el('div', { class: 'emomodal' }, el('small', { class: 'muted' }, 'جاري التحميل...'));
+                const ov = el('div', { class: 'cm-ov', role: 'dialog', 'aria-modal': 'true', onclick: (ev) => { if (ev.target === ov) close(); } },
+                  el('div', { class: 'cm-box lm' },
+                    el('div', { class: 'rowbar' }, el('h3', {}, 'اختر إيموجي: ' + label),
+                      el('button', { class: 'btn ghost small', type: 'button', 'aria-label': 'إغلاق', onclick: close }, icon('close'))),
+                    body));
+                document.body.append(ov);
+                document.addEventListener('keydown', onKey);
+                const choose = async (v) => {
+                  try {
+                    await apiSend('PUT', '/api/tkemojis', { key, value: v });
+                    j.emojis[key] = v; drawTk(); close();
+                    fl.show('تم الحفظ ✅ (الرسائل القديمة تتحدث لما تتفاعل معها، أو ابعت تذكرة جديدة)');
+                  } catch (er) { fl.show(errText(er), false); }
+                };
+                const L = await getLists();
+                put(body,
+                  el('div', { class: 'emotitle' }, 'إيموجيات سيرفر OPS'),
+                  L.server.length ? grid(L.server, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
+                  el('div', { class: 'emotitle' }, 'إيموجيات البوت'),
+                  L.app.length ? grid(L.app, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
+                  el('div', { class: 'emotitle' }, 'إيموجيات عادية'),
+                  el('div', { class: 'emogrid' }, STD.map((s) => el('button', { type: 'button', class: 'emoit', onclick: () => choose(s) }, s))),
+                  el('button', { class: 'btn ghost small danger', type: 'button', onclick: () => choose('') }, 'بدون إيموجي'));
+              },
+            }, icon('smile'), 'تغيير'));
+            return el('div', { class: 'bhv' },
+              el('div', { class: 'mrow' },
+                el('span', { class: 'hbox gold' }, j.emojis[key] ? view(j.emojis[key]) : document.createTextNode('—')),
+                el('b', {}, label)),
+              wrap);
+          }));
+          drawTk();
+        })();        const cmdBox = el('div', { class: 'stack' });
+        (async () => {
+          let j;
+          try { j = await api('/api/cmdemojis'); } catch (_) { return; }
+          if (!j.isOwner) return;
+          const drawCmd = () => put(cmdBox, j.items.map(([key, label]) => {
+            const wrap = el('div', { class: 'emowrap' });
+            wrap.append(el('button', {
+              class: 'btn ghost small', type: 'button',
+              onclick: async (e) => {
+                e.stopPropagation();
+                const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); };
+                const onKey = (ev) => { if (ev.key === 'Escape') close(); };
+                const body = el('div', { class: 'emomodal' }, el('small', { class: 'muted' }, 'جاري التحميل...'));
+                const ov = el('div', { class: 'cm-ov', role: 'dialog', 'aria-modal': 'true', onclick: (ev) => { if (ev.target === ov) close(); } },
+                  el('div', { class: 'cm-box lm' },
+                    el('div', { class: 'rowbar' }, el('h3', {}, 'اختر إيموجي: ' + label),
+                      el('button', { class: 'btn ghost small', type: 'button', 'aria-label': 'إغلاق', onclick: close }, icon('close'))),
+                    body));
+                document.body.append(ov);
+                document.addEventListener('keydown', onKey);
+                const choose = async (v) => {
+                  try {
+                    await apiSend('PUT', '/api/cmdemojis', { key, value: v });
+                    j.emojis[key] = v; drawCmd(); close();
+                    fl.show('تم الحفظ ✅ (يطبق على الردود الجديدة فوراً)');
+                  } catch (er) { fl.show(errText(er), false); }
+                };
+                const L = await getLists();
+                put(body,
+                  el('div', { class: 'emotitle' }, 'إيموجيات سيرفر OPS'),
+                  L.server.length ? grid(L.server, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
+                  el('div', { class: 'emotitle' }, 'إيموجيات البوت'),
+                  L.app.length ? grid(L.app, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
+                  el('div', { class: 'emotitle' }, 'إيموجيات عادية'),
+                  el('div', { class: 'emogrid' }, STD.map((s) => el('button', { type: 'button', class: 'emoit', onclick: () => choose(s) }, s))),
+                  el('button', { class: 'btn ghost small danger', type: 'button', onclick: () => choose('') }, 'بدون إيموجي'));
+              },
+            }, icon('smile'), 'تغيير'));
+            return el('div', { class: 'bhv' },
+              el('div', { class: 'mrow' },
+                el('span', { class: 'hbox gold' }, j.emojis[key] ? view(j.emojis[key]) : document.createTextNode('—')),
+                el('b', {}, label)),
+              wrap);
+          }));
+          drawCmd();
+        })();
+        const sendBtn = el('button', {
+          class: 'btn primary wide', type: 'button', disabled: ro,
+          onclick: async () => {
+            sendBtn.disabled = true;
+            try {
+              if (dirty()) { await apiSend('PUT', `/api/guild/${gid}/tempvoice`, { cfg }); base = clone(cfg); }
+              await apiSend('POST', `/api/guild/${gid}/tempvoice/panel`);
+              fl.show(d.hasPanel ? 'تم تحديث الرسالة ✅' : 'تم إرسال اللوحة ✅');
+              await load();
+            } catch (e) { fl.show(errText(e), false); sendBtn.disabled = false; }
+          },
+        }, icon('send'), d.hasPanel ? 'تحديث الرسالة' : 'إرسال اللوحة');
+        return el('section', { class: 'panelc' },
+          el('div', { class: 'phd' }, el('span', { class: 'hbox gold' }, icon('smile')),
+            el('div', {}, el('h2', {}, 'إيموجيات الأزرار'), el('small', { class: 'muted' }, 'اختر إيموجي لكل زر في لوحة التحكم'))),
+          rows, sendBtn,
+          el('div', { class: 'sep' }),
+          el('div', { class: 'phd' }, el('span', { class: 'hbox gold' }, icon('ticket')),
+            el('div', {}, el('h2', {}, 'إيموجيات التذاكر'), el('small', { class: 'muted' }, 'أزرار وقائمة خيارات التذكرة'))),
+          tkBox,
+          el('div', { class: 'sep' }),
+          el('div', { class: 'phd' }, el('span', { class: 'hbox gold' }, icon('bolt')),
+            el('div', {}, el('h2', {}, 'إيموجيات ردود الأوامر'), el('small', { class: 'muted' }, 'الإيموجيات اللي تظهر برسائل البوت (ميوت، سجن، باند، رتب...)'))),
+          cmdBox);
+      };
+      const drawPane = () => put(pane, sub === 'general' ? generalPane() : sub === 'ctl' ? ctlPane() : sub === 'emo' ? emoPane() : permPane());      const master = el('section', { class: 'panelc masterc' },
         el('div', { class: 'trow' },
           el('div', { class: 'mrow' }, el('span', { class: 'mico' }, icon('mic')),
             el('div', {}, el('h2', {}, 'تفعيل النظام'), el('small', { class: 'muted' }, 'تشغيل كافة خدمات الروم المؤقت'))),
           green(cfg.enabled, (v) => { cfg.enabled = v; })));
+      // ===== روم الألعاب المؤقت =====
+      Object.assign(ERRS, { same_channel: 'قناة إنشاء روم الألعاب لازم تكون غير قناة الروم المؤقت العام.' });
+      const gamesView = () => {
+        const g = cfg.games;
+        const total = () => g.games.length + (g.allowCustom ? 1 : 0);
+        const emoUrl = (id, a) => `https://cdn.discordapp.com/emojis/${id}.${a ? 'gif' : 'png'}?size=48`;
+        const emoView = (v) => { const m = /^<(a?):(\w+):(\d+)>$/.exec(v || ''); return m ? el('img', { src: emoUrl(m[3], m[1]), alt: m[2], width: 26, height: 26 }) : document.createTextNode(v || '🎮'); };
+        const STDE = ['🎮', '🕹️', '🎯', '⚽', '🏀', '🚗', '🔫', '⚔️', '🧱', '🏆', '👾', '🎲', '🃏', '🎧', '🔥', '💎', '⭐', '👑', '🧩', '🪖'];
+        let emoList = null;
+        const getEmo = async () => emoList || (emoList = (await api(`/api/guild/${gid}/emojis`)).list);
 
+        const numStep = (label, obj, key, lo, hi) => {
+          const inp = el('input', { type: 'number', min: lo, max: hi, value: obj[key], disabled: ro, 'aria-label': label });
+          const set = (v) => { v = Math.max(lo, Math.min(hi, Math.round(Number(v)) || lo)); obj[key] = v; inp.value = v; touch(); };
+          inp.addEventListener('change', () => set(inp.value));
+          return el('div', { class: 'nstep' },
+            el('button', { type: 'button', disabled: ro, 'aria-label': 'زيادة', onclick: () => set(obj[key] + 1) }, '+'),
+            inp,
+            el('button', { type: 'button', disabled: ro, 'aria-label': 'نقصان', onclick: () => set(obj[key] - 1) }, '−'));
+        };
+        const gsel = (key, list, label, ic, ph, pre, off) => {
+          const s = el('select', { class: 'sel full', disabled: ro || off, 'aria-label': label },
+            el('option', { value: '' }, ph),
+            list.map((c) => el('option', { value: c.id, selected: c.id === g[key] }, pre + c.name)));
+          s.addEventListener('change', () => { g[key] = s.value || null; touch(); });
+          return el('div', { class: 'stack tight' }, el('label', { class: 'flabel iconlbl' }, icon(ic), label), s);
+        };
+
+        // زر التفعيل (لو مسكّر بس هاد بيظهر)
+        const gm = el('section', { class: 'panelc masterc' },
+          el('div', { class: 'trow' },
+            el('div', { class: 'mrow' }, el('span', { class: 'mico' }, icon('gamepad')),
+              el('div', {}, el('h2', {}, 'تفعيل رومات الألعاب المؤقتة'), el('small', { class: 'muted' }, 'إنشاء روم ألعاب خاص مع أزرار لاختيار اللعبة وتحديد عدد الأعضاء'))),
+            green(g.enabled, (v) => { g.enabled = v; draw(); })));
+
+        // --- الإعدادات العامة ---
+        const generalG = () => {
+          const nameIn = el('input', { class: 'inp', type: 'text', maxlength: 100, disabled: ro, 'aria-label': 'قالب اسم الغرفة' });
+          nameIn.value = g.nameTpl;
+          nameIn.addEventListener('input', () => { g.nameTpl = nameIn.value; touch(); });
+          return el('section', { class: 'panelc' },
+            el('div', { class: 'phd' }, el('span', { class: 'hbox purple' }, icon('sliders')),
+              el('div', {}, el('h2', {}, 'قنوات وفئة رومات الألعاب'), el('small', { class: 'muted' }, 'تحديد روم الإنشاء الخاص بالألعاب والفئة المخصصة لها'))),
+            gsel('joinChannel', d.voiceChannels, 'قناة "انضم لإنشاء روم ألعاب"', 'mic', 'تُنشأ تلقائياً...', '', false),
+            gsel('category', d.categories, 'فئة رومات الألعاب (Category)', 'folder', 'تُنشأ تلقائياً...', '', false),
+            gsel('logChannel', d.channels, 'سجل محادثات الألعاب (اختياري)', 'doc', 'اختر قناة السجلات...', '# ', !d.guildPremium),
+            d.guildPremium ? null : el('small', { class: 'warnt' }, 'يتطلب اشتراك بريميوم نشط.'),
+            el('div', { class: 'sep' }),
+            el('label', { class: 'flabel' }, 'قالب اسم الغرفة قبل اختيار اللعبة'), nameIn,
+            el('small', { class: 'muted' }, 'المتغيرات: {user} {username} {userid} {server}'),
+            el('div', { class: 'pf' }, el('span', { class: 'iconlbl' }, icon('activity'), 'البت ريت الافتراضي (kbps)'), numStep('البت ريت', g, 'bitrate', 8, 384)));
+        };
+
+        // --- رسالة التحكم (قابلة للتعديل وبتتطبق عند إنشاء كل روم) ---
+        const ctlG = () => {
+          const m = g.msg;
+          const prev = el('div', { class: 'rpprev' });
+          const fix = (t) => String(t || '').replace(/\{user\}/g, '@أنت').replace(/\{userName\}|\{username\}/g, 'أنت').replace(/\{userid\}/g, '123456').replace(/\{server\}/g, 'السيرفر').replace(/\{channel\}/g, '#Room');
+          const drawPrev = () => put(prev, el('div', { class: 'rpmsg' },
+            el('div', { class: 'rpname' }, 'البوت', el('span', { class: 'rpbot' }, 'BOT')),
+            m.content ? el('div', {}, fix(m.content)) : null,
+            el('div', { class: 'rpemb', style: 'border-inline-start-color:' + m.color },
+              m.title ? el('b', {}, fix(m.title)) : null,
+              m.description ? el('p', {}, fix(m.description)) : null,
+              m.image ? el('img', { class: 'rpimg', src: imgSrc(gid, m.image), alt: '' }) : null,
+              m.footer.text ? el('small', {}, fix(m.footer.text)) : null),
+            el('div', { class: 'rpbtns' },
+              g.games.map((x) => el('span', { class: 'rpbtn s-secondary' }, [x.emoji, x.name].filter(Boolean).join(' '))),
+              g.allowCustom ? el('span', { class: 'rpbtn s-primary' }, '✨ لعبة أخرى') : null)));
+          const tin = (obj, key, ph, max) => { const x = el('input', { class: 'inp', type: 'text', maxlength: max, placeholder: ph, disabled: ro, 'aria-label': ph }); x.value = obj[key] || ''; x.addEventListener('input', () => { obj[key] = x.value; drawPrev(); touch(); }); return x; };
+          const ta = (obj, key, ph, max, rows) => { const x = el('textarea', { class: 'inp ta', rows, maxlength: max, placeholder: ph, disabled: ro, 'aria-label': ph }); x.value = obj[key] || ''; x.addEventListener('input', () => { obj[key] = x.value; drawPrev(); touch(); }); return x; };
+          const col = el('input', { type: 'color', class: 'colorin big', value: m.color, disabled: ro, 'aria-label': 'لون الشريط' });
+          col.addEventListener('input', () => { m.color = col.value; drawPrev(); touch(); });
+          const slot = (key, label) => imgSlot(gid, m, key, { label, ro, fl, onChange: () => { drawPrev(); touch(); } });
+          drawPrev();
+          return el('section', { class: 'panelc' },
+            el('div', { class: 'phd' }, el('span', { class: 'hbox blue' }, icon('hash')),
+              el('div', {}, el('h2', {}, 'رسالة اختيار وتخصيص اللعبة'), el('small', { class: 'muted' }, 'تُرسل بشات الروم الصوتي مع الأزرار عند إنشاء كل روم'))),
+            el('small', { class: 'muted' }, 'المتغيرات: {user} {userName} {username} {userid} {server} {channel}'),
+            el('label', { class: 'flabel' }, 'محتوى الرسالة (نص فوق الإيمبد)'), ta(m, 'content', '{user}', 2000, 2),
+            el('div', { class: 'colorrow2' }, el('span', { class: 'flabel' }, 'لون الشريط الجانبي'), col),
+            el('label', { class: 'flabel' }, 'العنوان'), tin(m, 'title', 'عنوان الإيمبد', 256),
+            el('label', { class: 'flabel' }, 'الوصف'), ta(m, 'description', 'وصف الإيمبد', 4096, 7),
+            el('div', { class: 'subrow' }, slot('thumbnail', 'صورة مصغرة'), tin(m.footer, 'text', 'نص الفوتر', 2048)),
+            slot('image', 'صورة كبيرة'),
+            el('div', { class: 'flabel' }, 'معاينة'), prev);
+        };
+
+        // --- قائمة الألعاب (أزرار) ---
+        const listG = () => {
+          const cnt = el('span', { class: 'pbadge' });
+          const rows = el('div', { class: 'stack' });
+          const add = el('button', {
+            class: 'btn primary small', type: 'button',
+            onclick: () => { g.games.push({ id: rndId(), name: 'لعبة ' + (g.games.length + 1), emoji: '🎮', fixed: false, seats: 5 }); drawGames(); touch(); },
+          }, icon('plus'), 'إضافة لعبة');
+
+          const cardOf = (x, i) => {
+            const emo = el('button', { class: 'hbox purple emobtn', type: 'button', disabled: ro, 'aria-label': 'اختيار إيموجي' });
+            const paint = () => put(emo, emoView(x.emoji));
+            paint();
+            const wrap = el('div', { class: 'emowrap' }, emo);
+            emo.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              const old = wrap.querySelector('.emopop');
+              if (old) { old.remove(); return; }
+              const pop = el('div', { class: 'emopop' }, el('small', { class: 'muted' }, 'جاري التحميل...'));
+              pop.addEventListener('click', (ev) => ev.stopPropagation());
+              wrap.append(pop);
+              document.addEventListener('click', () => pop.remove(), { once: true });
+              const choose = (v) => { x.emoji = v; paint(); touch(); pop.remove(); };
+              let list = [];
+              try { list = await getEmo(); } catch (_) {}
+              put(pop,
+                el('div', { class: 'emotitle' }, 'إيموجيات السيرفر'),
+                list.length
+                  ? el('div', { class: 'emogrid' }, list.map((z) => el('button', { type: 'button', class: 'emoit', title: z.name, onclick: () => choose(z.tag) }, el('img', { src: emoUrl(z.id, z.animated), alt: z.name, width: 28, height: 28 }))))
+                  : el('small', { class: 'muted' }, 'ما في إيموجيات مخصصة بالسيرفر'),
+                el('div', { class: 'emotitle' }, 'إيموجيات عادية'),
+                el('div', { class: 'emogrid' }, STDE.map((s) => el('button', { type: 'button', class: 'emoit', onclick: () => choose(s) }, s))),
+                x.emoji ? el('button', { class: 'btn ghost small danger', type: 'button', onclick: () => choose('') }, 'إزالة الإيموجي') : null);
+            });
+            const nm = el('input', { class: 'inp', type: 'text', maxlength: 80, disabled: ro, 'aria-label': 'اسم اللعبة' });
+            nm.value = x.name;
+            nm.addEventListener('input', () => { x.name = nm.value; touch(); });
+            const seatsBox = el('div', {});
+            const drawSeats = () => {
+              const sw = toggle(x.fixed, (v) => { x.fixed = v; drawSeats(); touch(); }, ro);
+              sw.classList.add('green');
+              put(seatsBox, el('div', { class: 'bhv' },
+                el('div', { class: 'mrow' }, sw, el('b', {}, 'تخصيص حد أقصى')),
+                x.fixed ? el('div', { class: 'pf' }, el('span', {}, 'مقاعد'), numStep('المقاعد', x, 'seats', 1, 99)) : el('span', { class: 'chip' }, 'يطلب البوت تحديد العدد')));
+            };
+            drawSeats();
+            return el('div', { class: 'rwcard' },
+              el('div', { class: 'subrow' },
+                el('span', { class: 'chip' }, '#' + (i + 1)), wrap, nm,
+                el('button', { class: 'btn ghost small danger', type: 'button', disabled: ro, 'aria-label': 'حذف', onclick: () => { g.games.splice(i, 1); drawGames(); touch(); } }, icon('trash'))),
+              seatsBox);
+          };
+          const drawGames = () => {
+            cnt.textContent = `${total()} / 25 خياراً متاحاً في ديسكورد`;
+            add.disabled = ro || total() >= 25;
+            put(rows, g.games.length
+              ? g.games.map(cardOf)
+              : el('div', { class: 'empty boxed' }, icon('gamepad'), el('p', {}, 'لا توجد ألعاب مضافة حالياً'), el('small', { class: 'muted' }, 'اضغط على «إضافة لعبة» لإضافة أزرار جديدة')));
+          };
+          const customSw = toggle(g.allowCustom, (v) => { g.allowCustom = v; drawGames(); touch(); }, ro);
+          customSw.classList.add('green');
+          drawGames();
+          return el('div', { class: 'stack' },
+            el('div', { class: 'rowbar' }, el('div', { class: 'tline' }, el('h2', {}, 'قائمة الألعاب المتاحة'), cnt), add),
+            el('section', { class: 'panelc' },
+              el('div', { class: 'trow' },
+                el('div', { class: 'mrow' }, el('span', { class: 'hbox purple' }, icon('bolt')),
+                  el('div', {}, el('h3', {}, 'إتاحة خيار «لعبة مخصصة / لعبة أخرى»'), el('small', { class: 'muted' }, 'يتيح للعضو كتابة اسم اللعبة وعدد المقاعد بنفسه عبر نافذة منبثقة'))),
+                customSw)),
+            rows);
+        };
+
+        if (!g.enabled) return gm;   // مسكّر: بس زر التفعيل
+        const gTabs = el('div', { class: 'mtabs' }, [['general', 'الإعدادات العامة', 'sliders'], ['ctl', 'رسالة التحكم', 'hash'], ['list', 'قائمة الألعاب', 'gamepad']].map(([id, l, ic]) =>
+          el('button', { type: 'button', class: 'mtab' + (gsub === id ? ' on' : ''), onclick: () => { gsub = id; draw(); } }, icon(ic), l)));
+        return el('div', { class: 'stack' }, gm, gTabs, gsub === 'general' ? generalG() : gsub === 'ctl' ? ctlG() : listG());
+      };
       const draw = () => {
         put(topTabs, [['general', 'الروم المؤقت العام', 'mic'], ['games', 'روم الألعاب المؤقت', 'gamepad']].map(([id, l, ic]) =>
           el('button', { type: 'button', role: 'tab', 'aria-selected': String(top === id), class: 'ptab' + (top === id ? ' on' : ''), onclick: () => { top = id; draw(); } }, icon(ic), l)));
-        if (top === 'games') {
-          put(main, el('div', { class: 'empty boxed' }, icon('gamepad'), el('p', {}, 'روم الألعاب المؤقت قيد التجهيز 🚧')));
-          return;
-        }
-        put(subTabs, [['general', 'الإعدادات العامة', 'sliders'], ['ctl', 'رسالة التحكم', 'hash'], ['perm', 'الصلاحيات', 'lock']].map(([id, l, ic]) =>
+        if (top === 'games') { put(main, gamesView()); return; }
+        put(subTabs, [['general', 'الإعدادات العامة', 'sliders'], ['ctl', 'رسالة التحكم', 'hash'], ['perm', 'الصلاحيات', 'lock'], ...(d.isOwner ? [['emo', 'الإيموجيات', 'smile']] : [])].map(([id, l, ic]) =>
           el('button', { type: 'button', class: 'mtab' + (sub === id ? ' on' : ''), onclick: () => { sub = id; draw(); } }, icon(ic), l)));
         put(main, master, subTabs, pane);
         drawPane();
@@ -9308,7 +12293,13 @@ loadCoin();
     async function sendPanel() {
       if (!cfg.panel.channel) return fl.show(ERRS.no_channel, false);
       if (dirty() && !(await save())) return;
-      try { await apiSend('POST', `/api/guild/${gid}/tickets/send`); fl.show('تم إرسال البانل للقناة ✅'); }
+      try {
+      const j = await apiSend('POST', `/api/guild/${gid}/tickets/send`);
+      cfg.panel.messageId = j.messageId; cfg.panel.msgChannel = cfg.panel.channel;
+      base.panel.messageId = j.messageId; base.panel.msgChannel = cfg.panel.channel;
+      fl.show(j.updated ? 'تم تحديث البانل ✅' : 'تم إرسال البانل للقناة ✅');
+      build();
+    }
       catch (e) { fl.show(errText(e), false); }
     }
 
@@ -9441,7 +12432,48 @@ loadCoin();
       const drawMode = () => put(modeBox, [['button', 'أزرار', 'grid'], ['select', 'قائمة', 'chevron']].map(([k, t, ic]) =>
         el('button', { type: 'button', class: 'fopt' + (cfg.mode === k ? ' on' : ''), disabled: ro, 'aria-pressed': String(cfg.mode === k), onclick: () => { cfg.mode = k; drawMode(); touch(); } },
           icon(ic), el('b', {}, t))));
-
+      const pcol = el('input', { type: 'color', class: 'colorin big', value: cfg.panel.color || '#fbbf24', disabled: ro, 'aria-label': 'لون الإيمبد' });
+      pcol.addEventListener('input', () => { cfg.panel.color = pcol.value; touch(); });
+            const tkEmoBox = el('div', { class: 'stack' });
+      let tkEmo = null;
+      const drawTkEmo = () => put(tkEmoBox, tkEmo.items.map(([key, label]) =>
+        el('div', { class: 'bhv' },
+          el('div', { class: 'mrow' },
+            el('span', { class: 'hbox gold' }, tkEmo.emojis[key] ? emojiView(tkEmo.emojis[key]) : document.createTextNode('—')),
+            el('b', {}, label)),
+          el('button', { class: 'btn ghost small', type: 'button', disabled: ro, onclick: () => pickTk(key, label) }, icon('smile'), 'تغيير'))));
+      async function pickTk(key, label) {
+        const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); };
+        const onKey = (e) => { if (e.key === 'Escape') close(); };
+        const body = el('div', { class: 'emomodal' }, el('small', { class: 'muted' }, 'جاري التحميل...'));
+        const ov = el('div', { class: 'cm-ov', role: 'dialog', 'aria-modal': 'true', onclick: (e) => { if (e.target === ov) close(); } },
+          el('div', { class: 'cm-box lm' },
+            el('div', { class: 'rowbar' }, el('h3', {}, 'اختر إيموجي: ' + label),
+              el('button', { class: 'btn ghost small', type: 'button', 'aria-label': 'إغلاق', onclick: close }, icon('close'))),
+            body));
+        document.body.append(ov);
+        document.addEventListener('keydown', onKey);
+        const choose = async (v) => {
+          try {
+            await apiSend('PUT', `/api/guild/${gid}/tkemojis`, { key, value: v });
+            tkEmo.emojis[key] = v; drawTkEmo(); close(); fl.show('تم الحفظ ✅');
+          } catch (e) { fl.show(errText(e), false); }
+        };
+        let list = [];
+        try { list = await getEmojis(); } catch (_) {}
+        put(body,
+          el('div', { class: 'emotitle' }, 'إيموجيات سيرفرك'),
+          list.length
+            ? el('div', { class: 'emogrid' }, list.map((x) => el('button', { type: 'button', class: 'emoit', title: x.name, onclick: () => choose(x.tag) },
+                el('img', { src: emojiUrl(x.id, x.animated), alt: x.name, width: 28, height: 28 }))))
+            : el('small', { class: 'muted' }, 'ما في إيموجيات مخصصة بالسيرفر'),
+          el('div', { class: 'emotitle' }, 'إيموجيات عادية'),
+          el('div', { class: 'emogrid' }, STD_EMOJIS.map((s) => el('button', { type: 'button', class: 'emoit', onclick: () => choose(s) }, s))),
+          el('button', { class: 'btn ghost small danger', type: 'button', onclick: () => choose('') }, 'بدون إيموجي'));
+      }
+      api(`/api/guild/${gid}/tkemojis`).then((j) => { tkEmo = j; drawTkEmo(); }).catch(() => {});
+      
+        
       // ---- نصوص البانل ----
       const pin = (key, ph, max, rows) => {
         const x = rows
@@ -9479,9 +12511,11 @@ loadCoin();
           lbl('عنوان الـ Panel'), pin('title', 'عنوان البانل', 256),
           lbl('وصف الـ Panel'), pin('description', 'وصف البانل', 4000, 6),
           lbl('صورة الـ Panel (اختياري)'), imgPicker(cfg.panel, 'image', ro),
+                    el('div', { class: 'colorrow2' }, el('span', { class: 'flabel' }, 'لون الإيمبد'), pcol),
           lbl('القناة المستهدفة لإرسال الـ Panel'),
           chanSel(cfg.panel.channel, d.channels, 'اختر القناة...', (v) => { cfg.panel.channel = v; }, '# ', false),
-          el('button', { class: 'btn primary wide', type: 'button', disabled: ro, onclick: sendPanel }, icon('send'), 'إرسال البانل')),
+          el('button', { class: 'btn primary wide', type: 'button', disabled: ro, onclick: sendPanel }, icon('send'), (cfg.panel.messageId && cfg.panel.msgChannel === cfg.panel.channel) ? 'تحديث البانل' : 'إرسال البانل')),
+                  
         el('p', { class: 'fine start' }, 'لو ما حددت رتب دعم (لا عامة ولا للزر) فبس أصحاب صلاحية Manage Server بيقدروا يستلموا ويديروا التذاكر. بعد أي تعديل على الأزرار اضغط «إرسال البانل» مرة ثانية عشان تنحدّث الرسالة بالقناة.'),
         bar.node);
       drawOpts(); drawMode(); bar.refresh();
@@ -9491,6 +12525,112 @@ loadCoin();
     load();
     return box;
   }  // =====================  القسم الجديد  =====================
+    function pageTktShortcuts(r) {
+    const gid = r.gid;
+    const box = el('div', { class: 'page' });
+    const fl = flasher();
+    let d = null;
+    const EMO = { claim: 'b_claim', unclaim: 'm_unclaim', close: 'b_close', delete: 'b_delete', reopen: 'b_reopen', come: 'm_come', support: 'b_support', rename: 'm_rename', rating: 'm_rating', add: 'm_add', remove: 'm_remove' };
+    const emojiView = (v) => {
+      const m = /^<(a?):(\w+):(\d+)>$/.exec(v || '');
+      return m ? el('img', { src: `https://cdn.discordapp.com/emojis/${m[3]}.${m[1] ? 'gif' : 'png'}?size=48`, alt: m[2], width: 24, height: 24 }) : document.createTextNode(v || '⚡');
+    };
+
+    const premModal = () => {
+      const done = () => { ov.remove(); document.removeEventListener('keydown', onKey); };
+      const onKey = (e) => { if (e.key === 'Escape') done(); };
+      const ov = el('div', { class: 'cm-ov', role: 'dialog', 'aria-modal': 'true', onclick: (e) => { if (e.target === ov) done(); } },
+        el('div', { class: 'cm-box lm' },
+          el('div', { class: 'rowbar' },
+            el('h3', {}, icon('crown'), 'اختصارات التذاكر ميزة بريميوم'),
+            el('button', { class: 'btn ghost small', type: 'button', 'aria-label': 'إغلاق', onclick: done }, icon('close'))),
+          el('p', {}, 'تحتاج اشتراك بريميوم نشط بالسيرفر لحفظ اختصارات التذاكر.'),
+          el('div', { class: 'lm-up' },
+            el('b', {}, icon('crown'), 'مزايا الاشتراك:'),
+            el('ul', {},
+              el('li', {}, 'اختصارات كتابية لكل أوامر التذكرة (استلام، غلق، حذف...)'),
+              el('li', {}, 'إدارة التذاكر بسرعة بدون الضغط على الأزرار'),
+              el('li', {}, 'سعة إيمبد 10KB وحماية خاصة وسجلات لوق حصرية'),
+              el('li', {}, 'أولوية VIP ودعم فني مباشر'))),
+          el('a', { class: 'btn primary wide', href: `#/g/${gid}/premium`, onclick: done }, icon('crown'), 'اشترك الآن')));
+      document.body.append(ov);
+      document.addEventListener('keydown', onKey);
+    };
+
+    async function load() {
+      try { d = await api(`/api/guild/${gid}/tkshort`); } catch (e) { put(box, errorBox(load)); return; }
+      build();
+    }
+
+    function build() {
+      const ro = !d.canManage;
+      const card = ([key, label, desc]) => {
+        const inp = el('input', { class: 'inp', type: 'text', maxlength: 20, placeholder: 'مثال: استلام', disabled: ro, 'aria-label': label });
+        inp.value = d.words[key] || '';
+        const btn = el('button', {
+          class: 'btn primary small', type: 'button', disabled: ro,
+          onclick: async () => {
+            if (!d.guildPremium) return premModal();
+            const val = inp.value.trim();
+            if (val && [...val].length < 3) return fl.show(ERRS.short_alias, false);
+            btn.disabled = true;
+            try {
+              await apiSend('PUT', `/api/guild/${gid}/tkshort`, { key, value: inp.value });
+              d.words[key] = inp.value.trim().toLowerCase();
+              fl.show('تم حفظ الاختصار ✅');
+            } catch (e) { fl.show(errText(e), false); }
+            btn.disabled = false;
+          },
+        }, icon('save'), 'حفظ الاختصار');
+        return el('section', { class: 'panelc' },
+          el('div', { class: 'phd' },
+            el('span', { class: 'hbox gold' }, emojiView(d.emojis[EMO[key]])),
+            el('div', {}, el('h3', {}, label), el('small', { class: 'muted' }, desc))),
+          inp, btn);
+      };
+      put(box,
+        el('p', { class: 'eyebrow' }, 'TICKET SHORTCUTS'),
+        el('h1', { class: 'greet' }, 'اختصارات التذاكر ', el('span', { class: 'tag' }, 'بريميوم')),
+        el('p', { class: 'lead' }, 'اكتب الاختصار داخل التذكرة وينفذ البوت الأمر مباشرة بدل الضغط على الزر.'),
+        fl,
+        ro ? el('div', { class: 'notice show' }, 'تحتاج صلاحية إدارة السيرفر لتعديل الاختصارات.') : null,
+        d.items.map(card));
+    }
+
+    put(box, el('p', { class: 'muted center' }, 'جاري التحميل...'));
+    load();
+    return box;
+  }
+    function pageTktLog(r) {
+    const gid = r.gid;
+    const box = el('div', { class: 'page' });
+    let list = [], q = '';
+    const out = el('div', { class: 'stack' });
+    const dt = (t) => new Date(t).toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' });
+    const search = el('input', { class: 'inp', type: 'search', placeholder: 'بحث باسم التكت أو صاحبها...', 'aria-label': 'بحث' });
+    const draw = () => {
+      const l = list.filter((x) => !q || [x.name, x.ownerName, x.owner, x.closerName, x.claimerName].some((v) => String(v || '').toLowerCase().includes(q)));
+      put(out, l.length
+        ? l.map((x) => el('a', { class: 'lrow', href: `/transcripts/${gid}/${x.id}`, target: '_blank', rel: 'noopener', style: 'text-decoration:none;color:inherit' },
+            icon('doc', 'goldc'),
+            el('span', { class: 'nm' }, x.name, el('small', { class: 'muted' }, `${x.ownerName || x.owner} · ${x.type}`)),
+            el('small', { class: 'muted' }, `${NF(x.count)} رسالة · ${dt(x.at)}`)))
+        : el('div', { class: 'empty boxed big' }, el('span', { class: 'emptyico' }, icon('doc')), el('h3', {}, 'لا توجد تذاكر مسجلة بعد')));
+    };
+    search.addEventListener('input', () => { q = search.value.trim().toLowerCase(); draw(); });
+    async function load() {
+      try { list = (await api(`/api/guild/${gid}/tktranscripts`)).list; } catch (e) { put(box, errorBox(load)); return; }
+      put(box,
+        el('p', { class: 'eyebrow' }, 'TICKET LOGS'),
+        el('h1', { class: 'greet' }, 'سجل التذاكر'),
+        el('p', { class: 'lead' }, 'كل التذاكر المغلقة بالسيرفر. اضغط على أي تذكرة لفتح رسائلها.'),
+        el('section', { class: 'panelc' }, search), out);
+      draw();
+    }
+    put(box, el('p', { class: 'muted center' }, 'جاري التحميل...'));
+    load();
+    return box;
+  }
   function pageMySec(r) {
     const gid = r.gid;
     const box = el('div', { class: 'page' });
@@ -9590,7 +12730,33 @@ loadCoin();
         el('option', { value: '' }, 'الجميع (بدون رتبة)'),
         d.roles.map((o) => el('option', { value: o.id, selected: o.id === cfg.role }, o.name)));
       roleSel.addEventListener('change', () => { cfg.role = roleSel.value || null; touch(); });
+      if (!Array.isArray(cfg.vipIds)) cfg.vipIds = [];
 
+      // --- إيموجي الرصيد ---
+      const emoLock = ro || !d.guildPremium;
+      const emoIn = el('input', { class: 'inp', type: 'text', maxlength: 64, placeholder: '😀  أو  <:name:id>', disabled: emoLock, 'aria-label': 'إيموجي الرصيد' });
+      emoIn.value = cfg.emoji || '';
+      emoIn.addEventListener('input', () => { cfg.emoji = emoIn.value.trim(); touch(); });
+      const emoSel = el('select', { class: 'sel full', disabled: emoLock, 'aria-label': 'إيموجيات السيرفر' },
+        el('option', { value: '' }, 'أو اختر من إيموجيات السيرفر...'));
+      api(`/api/guild/${gid}/emojis`).then((j) => j.list.forEach((x) => emoSel.append(el('option', { value: x.tag }, ':' + x.name + ':')))).catch(() => {});
+      emoSel.addEventListener('change', () => { if (emoSel.value) { emoIn.value = emoSel.value; cfg.emoji = emoSel.value; touch(); } });
+
+      // --- أعضاء المكافأة المميزة ---
+      const idIn = el('input', { class: 'inp', type: 'text', inputmode: 'numeric', placeholder: 'ايدي العضو (User ID)', disabled: emoLock, 'aria-label': 'ايدي العضو' });
+      const idList = el('div', { class: 'chips' });
+      const drawIds = () => put(idList, cfg.vipIds.map((id, i) =>
+        el('span', { class: 'achip' }, id,
+          el('button', { type: 'button', class: 'x', disabled: ro, 'aria-label': 'إزالة', onclick: () => { cfg.vipIds.splice(i, 1); drawIds(); touch(); } }, '×'))));
+      const addId = () => {
+        const v = idIn.value.trim();
+        if (!/^\d{15,25}$/.test(v)) return fl.show(ERRS.bad_user_id, false);
+        if (cfg.vipIds.includes(v)) { idIn.value = ''; return; }
+        if (cfg.vipIds.length >= 50) return fl.show('الحد الأقصى 50 عضو.', false);
+        cfg.vipIds.push(v); idIn.value = ''; drawIds(); touch();
+      };
+      idIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addId(); } });
+      drawIds();
       bar = saveBar(dirty, save, () => { cfg = clone(base); build(); });
       put(box,
         el('p', { class: 'eyebrow' }, 'ECONOMY MODULE'),
@@ -9621,6 +12787,22 @@ loadCoin();
           el('div', { class: 'rowbar' }, el('label', { class: 'flabel' }, 'رتبة استخدام الأوامر'), el('span', { class: 'pbadge' }, 'رتبة واحدة')),
           el('small', { class: 'muted' }, 'حدد رتبة معينة لاستخدام الأوامر داخل السيرفر (الأدمن يستخدمها دائماً).'),
           roleSel),
+                  el('section', { class: 'panelc' },
+          el('div', { class: 'rowbar' },
+            el('div', { class: 'phd' }, el('span', { class: 'hbox gold' }, icon('star')),
+              el('div', {}, el('h2', {}, 'إيموجي الرصيد'), el('small', { class: 'muted' }, 'يظهر بجانب رصيد كل عضو وبقائمة التوب (إيموجي واحد فقط)'))),
+            d.guildPremium ? null : el('span', { class: 'pbadge' }, icon('crown'), 'بريميوم')),
+          emoIn, emoSel,
+          d.guildPremium ? null : el('small', { class: 'warnt' }, 'يتطلب اشتراك بريميوم نشط.')),
+        el('section', { class: 'panelc' },
+          el('div', { class: 'rowbar' },
+            el('div', { class: 'phd' }, el('span', { class: 'hbox gold' }, icon('crown')),
+              el('div', {}, el('h2', {}, 'المكافأة المميزة'), el('small', { class: 'muted' }, 'الأعضاء هون يستلموا من 3500 إلى 5500 بدل 1700 - 2000، برسالة «مكافأة العضوية المميزة»'))),
+            d.guildPremium ? null : el('span', { class: 'pbadge' }, icon('crown'), 'بريميوم')),
+          el('div', { class: 'addrow' }, idIn,
+            el('button', { class: 'plus', type: 'button', disabled: emoLock, 'aria-label': 'إضافة', onclick: addId }, icon('plus'))),
+          idList,
+          d.guildPremium ? null : el('small', { class: 'warnt' }, 'يتطلب اشتراك بريميوم نشط.')),
         el('p', { class: 'fine start' }, 'لازم تفعّل النظام وتختار قناة وحدة على الأقل عشان الأوامر تشتغل. الأوامر: رصيد، مكافأة، تحويل، توب، معلومات، اعطي، سحب.'),
         bar.node);
       bar.refresh();
@@ -9630,7 +12812,7 @@ loadCoin();
     load();
     return box;
   }
-  function pageTransactions() {
+  function pageTransactionsOld() {
     const box = el('div', { class: 'page' });
     let d = null, src = 'all', sort = 'new', mode = 'table';
     const SRC = { daily: 'المكافأة اليومية', transfer: 'تحويل', admin: 'إدارة', premium: 'اشتراك بريميوم' };
@@ -9684,6 +12866,69 @@ loadCoin();
     put(box, el('p', { class: 'muted center' }, 'جاري التحميل...'));
     load();
     return box;
+  }  function pageTransactions() {
+    const box = el('div', { class: 'page' });
+    let list = [], src = 'all', srv = 'all', sort = 'new', mode = 'table';
+    const SRC = { daily: 'المكافأة اليومية', transfer: 'حوالة', admin: 'الإدارة', premium: 'اشتراك بريميوم' };
+    const dt = (t) => new Date(t).toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' });
+    const out = el('div', {});
+
+    async function load() {
+      let j;
+      try { j = await api('/api/me/transactions'); } catch (e) { put(box, errorBox(load)); return; }
+      list = j.list;
+      build();
+    }
+    const amtEl = (x) => el('b', { class: 'amt ' + (x.amt > 0 ? 'in' : 'out') }, (x.amt > 0 ? '+' : '−') + NF(Math.abs(x.amt)) + ' ' + x.cur);
+
+    function drawList() {
+      let l = list.filter((x) => (src === 'all' || x.src === src) && (srv === 'all' || x.gid === srv));
+      l = l.slice().sort((a, b) => sort === 'old' ? a.at - b.at : sort === 'high' ? Math.abs(b.amt) - Math.abs(a.amt) : b.at - a.at);
+      if (!l.length) {
+        return put(out, el('div', { class: 'empty boxed big' }, el('span', { class: 'emptyico' }, icon('coin')), el('h3', {}, 'لا توجد عمليات بعد')));
+      }
+      if (mode === 'grid') {
+        return put(out, el('div', { class: 'txgrid' }, l.map((x) =>
+          el('div', { class: 'txcard' },
+            el('div', { class: 'rowbar' }, amtEl(x), el('span', { class: 'mbadge' }, SRC[x.src] || x.src)),
+            el('p', { class: 'txreason' }, x.reason),
+            el('small', { class: 'muted' }, icon('server'), ' ', x.guild),
+            el('small', { class: 'muted' }, dt(x.at))))));
+      }
+      put(out, el('div', { class: 'tblwrap' }, el('table', { class: 'tbl' },
+        el('thead', {}, el('tr', {}, el('th', {}, 'المبلغ'), el('th', {}, 'السيرفر'), el('th', {}, 'السبب'), el('th', {}, 'التاريخ'))),
+        el('tbody', {}, l.map((x) => el('tr', {},
+          el('td', {}, amtEl(x)), el('td', {}, x.guild), el('td', {}, x.reason), el('td', { class: 'muted' }, dt(x.at))))))));
+    }
+
+    function build() {
+      const mkSel = (opts, cur, fn, label) => {
+        const s = el('select', { class: 'sel full', 'aria-label': label },
+          opts.map(([v, t]) => el('option', { value: v, selected: v === cur }, t)));
+        s.addEventListener('change', () => { fn(s.value); drawList(); });
+        return s;
+      };
+      const servers = [...new Map(list.map((x) => [x.gid, x.guild])).entries()];
+      const modes = el('div', { class: 'mtabs' });
+      const drawModes = () => put(modes, [['table', 'جدول', 'menu'], ['grid', 'شبكة', 'grid']].map(([k, t, ic]) =>
+        el('button', { type: 'button', class: 'mtab' + (mode === k ? ' on' : ''), onclick: () => { mode = k; drawModes(); drawList(); } }, icon(ic), t)));
+      put(box,
+        el('p', { class: 'eyebrow' }, 'ECONOMY MODULE'),
+        el('h1', { class: 'greet' }, 'سجل عمليات OPS Coin'),
+        el('p', { class: 'lead' }, 'تتبع جميع معاملات OPS الخاصة بك في كل السيرفرات بكل شفافية.'),
+        el('section', { class: 'panelc' },
+          el('div', { class: 'propgrid' },
+            el('div', { class: 'pf' }, 'السيرفر', mkSel([['all', 'كل السيرفرات'], ...servers], srv, (v) => { srv = v; }, 'فلترة حسب السيرفر')),
+            el('div', { class: 'pf' }, 'المصدر', mkSel([['all', 'الكل'], ...Object.entries(SRC)], src, (v) => { src = v; }, 'فلترة حسب المصدر')),
+            el('div', { class: 'pf' }, 'ترتيب حسب', mkSel([['new', 'الأحدث أولاً'], ['old', 'الأقدم أولاً'], ['high', 'الأعلى مبلغاً']], sort, (v) => { sort = v; }, 'ترتيب'))),
+          el('div', { class: 'pf' }, 'نمط العرض', modes)),
+        out);
+      drawModes(); drawList();
+    }
+
+    put(box, el('p', { class: 'muted center' }, 'جاري التحميل...'));
+    load();
+    return box;
   }
   function pageEcoTop(r, type) {
     const gid = r.gid;
@@ -9693,6 +12938,7 @@ loadCoin();
       try { j = await api(`/api/guild/${gid}/economy/top?type=${type}`); } catch (e) { put(box, errorBox(load)); return; }
       put(box,
         el('h1', { class: 'greet' }, type === 'xp' ? 'توب 100 خبرة' : `أغنى 100 في ${j.currency}`),
+        
         el('section', { class: 'panelc' },
           j.list.length
             ? j.list.map((u) => el('div', { class: 'lrow' + (u.id === me.id ? ' me' : '') },
@@ -9749,19 +12995,35 @@ loadCoin();
       { id: 'levels', label: 'نظام المستويات', ic: 'trend', href: `${base}/levels` },
       { id: 'chsync', label: 'تنظيم القنوات', ic: 'broom', href: `${base}/chsync` },
       { id: 'tempvoice', label: 'الروم المؤقت', ic: 'mic', href: `${base}/tempvoice` },
-      { id: 'tickets', label: 'التذاكر', ic: 'ticket', href: `${base}/tickets` },
+      { id: 'ticketsys', label: 'التذاكر', ic: 'ticket', children: [
+  { id: 'tickets', label: 'إعدادات التذاكر', href: `${base}/tickets` },
+  { id: 'tktlog', label: 'سجل التذاكر', ic: 'doc', href: `${base}/tktlog` },
+    { id: 'tktshort', label: 'اختصارات التذاكر', ic: 'bolt', href: `${base}/tktshort` },
+] },
+            { id: 'applysys', label: 'التقديم', ic: 'clipboardCheck', children: [
+        { id: 'apply-forms', label: 'نماذج التقديم', ic: 'clipboardList', href: `${base}/apply-forms` },
+        { id: 'apply', label: 'نظام التقديم', ic: 'clipboardCheck', href: `${base}/apply` },
+      ] },
     ];
   }
   function menuGroup(it, r) {
     const inside = it.children.some((c) => c.id === r.page);
-    const open = secOpen[it.id] === undefined ? inside : secOpen[it.id];
-    return el('div', { class: 'mgroup' },
-      el('button', {
-        type: 'button', class: 'mitem mhead' + (inside ? ' active' : ''), 'aria-expanded': String(open),
-        onclick: () => { secOpen[it.id] = !open; drawDrawer(parse()); },
-      }, icon(it.ic), el('span', {}, it.label), icon('chevron', 'chev' + (open ? ' up' : ''))),
-      open ? el('div', { class: 'msub' }, it.children.map((c) =>
-        el('a', { class: 'msubitem' + (r.page === c.id ? ' active' : ''), href: c.href, onclick: () => document.body.classList.remove('open') }, c.label))) : null);
+    let open = secOpen[it.id] === undefined ? inside : secOpen[it.id];
+    const chev = icon('chevron', 'chev' + (open ? ' up' : ''));
+    const head = el('button', {
+      type: 'button', class: 'mitem mhead' + (inside ? ' active' : ''), 'aria-expanded': String(open),
+    }, icon(it.ic), el('span', {}, it.label), chev);
+    const sub = el('div', { class: 'msub' }, it.children.map((c) =>
+      el('a', { class: 'msubitem' + (c.ic ? ' hasic' : '') + (r.page === c.id ? ' active' : ''), href: c.href, onclick: () => document.body.classList.remove('open') }, c.ic ? icon(c.ic) : null, c.label)));
+    const wrap = el('div', { class: 'msubwrap' + (open ? ' open' : '') }, sub);
+    head.addEventListener('click', () => {
+      open = !open;
+      secOpen[it.id] = open;
+      wrap.classList.toggle('open', open);
+      chev.classList.toggle('up', open);
+      head.setAttribute('aria-expanded', String(open));
+    });
+    return el('div', { class: 'mgroup' }, head, wrap);
   }
   const premLock = (gid, text) =>
     el('div', { class: 'lockbox' },
@@ -9833,6 +13095,411 @@ loadCoin();
     put(box, el('p', { class: 'muted center' }, 'جاري التحميل...'));
     load();
     return box;
+  }  // =====================  التقديم  =====================
+  Object.assign(ICONS, {
+    clipboardCheck: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 14l2 2 4-4"/>',
+    clipboardList: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 12h6M9 16h6"/>',
+    xcircle: '<circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/>',
+    checkcircle: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/>',
+    listq: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  });
+  Object.assign(ERRS, {
+    bad_questions: 'لازم من 1 إلى 5 أسئلة، وكل سؤال له نص.',
+    no_log: 'اختر روم السجلات أولاً.',
+  });
+
+  function pageApply(r, multi) {
+    const gid = r.gid;
+    const box = el('div', { class: 'page' });
+    const fl = flasher();
+    let d = null, forms = [], base = [], cur = 0, bar = null;
+    const dirty = () => JSON.stringify(forms) !== JSON.stringify(base);
+    const fmtS = (s) => (s === 0 ? '0s' : s % 3600 === 0 ? `${s / 3600}h` : s % 60 === 0 ? `${s / 60}m` : `${Math.floor(s / 60)}m ${s % 60}s`);
+    const blank = () => ({
+      id: '', name: 'نموذج جديد', enabled: true, channel: null, logChannel: null, description: '', cooldown: 300,
+      questions: [{ text: '', long: false, required: true }],
+      accept: { dm: false, dmText: '', roleOn: false, role: null },
+      reject: { dm: false, dmText: '', roleOn: false, role: null },
+      reviewerRoles: [],
+    });
+
+    async function load() {
+      try { d = await api(`/api/guild/${gid}/apply`); } catch (e) { put(box, errorBox(load)); return; }
+      forms = clone(d.forms);
+      if (!multi && !forms.length) forms = [blank()];
+      base = clone(forms); cur = 0;
+      build();
+    }
+    async function save() {
+      if (forms.some((f) => f.questions.some((q) => !q.text.trim()))) return fl.show('اكتب نص كل سؤال قبل الحفظ.', false);
+      try {
+        const j = await apiSend('PUT', `/api/guild/${gid}/apply`, { forms });
+        forms = j.forms; base = clone(forms);
+        fl.show('تم حفظ الإعدادات ✅');
+        build();
+      } catch (e) { fl.show(errText(e), false); }
+    }
+    async function sendPanel(f) {
+      if (!f.id || dirty()) return fl.show('احفظ التغييرات أولاً ثم أرسل اللوحة.', false);
+      try { await apiSend('POST', `/api/guild/${gid}/apply/${f.id}/send`); fl.show('تم إرسال لوحة التقديم ✅'); }
+      catch (e) { fl.show(errText(e), false); }
+    }
+
+    function build() {
+      const ro = !d.canManage;
+      const f = forms[multi ? cur : 0];
+      bar = saveBar(dirty, save, () => { forms = clone(base); cur = Math.min(cur, Math.max(0, forms.length - 1)); build(); });
+      const touch = () => bar.refresh();
+      const head = [
+        el('p', { class: 'eyebrow' }, 'APPLICATIONS'),
+        el('h1', { class: 'greet' }, multi ? 'نماذج التقديم ' : 'نظام التقديم', multi ? el('span', { class: 'tag' }, 'بريميوم') : null),
+        el('p', { class: 'lead' }, multi ? 'أنشئ نماذج تقديم متعددة لكل فريق بسيرفرك.' : 'قم بتكوين نموذج الطلب لسيرفرك'),
+        fl,
+        ro ? el('div', { class: 'notice show' }, 'تحتاج صلاحية إدارة السيرفر لتعديل هذه الإعدادات.') : null,
+      ];
+      const tabsBox = multi ? el('div', { class: 'ptabs', role: 'tablist' },
+        forms.map((x, i) => el('button', { type: 'button', role: 'tab', class: 'ptab' + (i === cur ? ' on' : ''), onclick: () => { cur = i; build(); } }, icon('clipboardList'), x.name || 'نموذج')),
+        el('button', { type: 'button', class: 'ptab dashed', disabled: ro || forms.length >= d.max, onclick: () => { forms.push(blank()); cur = forms.length - 1; build(); } }, icon('plus'), `نموذج جديد (${forms.length}/${d.max})`)) : null;
+      if (!f) { put(box, head, tabsBox, el('div', { class: 'empty boxed' }, icon('clipboardList'), el('p', {}, 'ما في نماذج بعد. اضغط «نموذج جديد»')), bar.node); bar.refresh(); return; }
+
+      const cbx = (label, get, set) => {
+        const c = el('input', { type: 'checkbox', disabled: ro });
+        c.checked = !!get();
+        c.addEventListener('change', () => { set(c.checked); touch(); });
+        return el('label', { class: 'chk' }, c, label);
+      };
+      const sec = (title, sub, ic, cls, ...kids) => el('section', { class: 'panelc' },
+        el('div', { class: 'phd' }, el('span', { class: 'hbox ' + cls }, icon(ic)), el('div', {}, el('h2', {}, title), sub ? el('small', { class: 'muted' }, sub) : null)), kids);
+      const chanSel = (key, ph) => {
+        const s = el('select', { class: 'sel full', disabled: ro, 'aria-label': ph }, el('option', { value: '' }, ph),
+          d.channels.map((c) => el('option', { value: c.id, selected: c.id === f[key] }, '# ' + c.name)));
+        s.addEventListener('change', () => { f[key] = s.value || null; touch(); });
+        return s;
+      };
+
+      // الاسم + التفعيل
+      const nameIn = el('input', { class: 'inp', type: 'text', maxlength: 60, disabled: ro, 'aria-label': 'اسم النموذج' });
+      nameIn.value = f.name;
+      nameIn.addEventListener('input', () => { f.name = nameIn.value; touch(); });
+      const sw = toggle(f.enabled, (v) => { f.enabled = v; touch(); }, ro);
+      sw.classList.add('green');
+
+      // الوصف
+      const desc = el('textarea', { class: 'inp ta', rows: 4, maxlength: 2000, placeholder: 'أدخل وصف النموذج...', disabled: ro, 'aria-label': 'وصف النموذج' });
+      desc.value = f.description;
+      desc.addEventListener('input', () => { f.description = desc.value; touch(); });
+
+      // فترة الانتظار
+      const cdOut = el('b', {}, fmtS(f.cooldown));
+      const rng = el('input', { type: 'range', min: 0, max: 3600, step: 30, value: f.cooldown, disabled: ro, 'aria-label': 'فترة الانتظار' });
+      rng.addEventListener('input', () => { f.cooldown = Number(rng.value); cdOut.textContent = fmtS(f.cooldown); touch(); });
+
+      // قبول / رفض
+      const actCard = (title, sub, ic, cls, o) => {
+        const dmT = el('textarea', { class: 'inp ta', rows: 3, maxlength: 1000, placeholder: 'أدخل نص الرسالة الخاصة... (المتغيرات: {user} {server})', disabled: ro || !o.dm });
+        dmT.value = o.dmText;
+        dmT.addEventListener('input', () => { o.dmText = dmT.value; touch(); });
+        const rs = el('select', { class: 'sel full', disabled: ro || !o.roleOn, 'aria-label': 'الرتبة' }, el('option', { value: '' }, 'اختر الرتب...'),
+          d.roles.map((x) => el('option', { value: x.id, selected: x.id === o.role }, x.name)));
+        rs.addEventListener('change', () => { o.role = rs.value || null; touch(); });
+        return sec(title, sub, ic, cls,
+          cbx('إرسال رسالة خاصة', () => o.dm, (v) => { o.dm = v; dmT.disabled = ro || !v; }), dmT,
+          cbx('إضافة رتبة', () => o.roleOn, (v) => { o.roleOn = v; rs.disabled = ro || !v; }), rs);
+      };
+
+      // الأسئلة
+      const qBox = el('div', { class: 'stack' });
+      const addQ = el('button', { class: 'addbox', type: 'button', onclick: () => { f.questions.push({ text: '', long: false, required: true }); drawQ(); touch(); } }, icon('plus'), 'إضافة سؤال');
+      const drawQ = () => {
+        addQ.disabled = ro || f.questions.length >= 5;
+        put(qBox, f.questions.map((q, i) => {
+          const ta = el('textarea', { class: 'inp ta', rows: 3, maxlength: 200, placeholder: 'أدخل سؤالك هنا...', disabled: ro, 'aria-label': 'نص السؤال' });
+          ta.value = q.text;
+          ta.addEventListener('input', () => { q.text = ta.value; touch(); });
+          return el('div', { class: 'rwcard' },
+            el('div', { class: 'rowbar' }, el('b', {}, `السؤال ${i + 1}`),
+              el('button', { class: 'btn ghost small danger', type: 'button', 'aria-label': 'حذف السؤال', disabled: ro || f.questions.length <= 1, onclick: () => { f.questions.splice(i, 1); drawQ(); touch(); } }, icon('trash'))),
+            el('label', { class: 'flabel' }, 'نص السؤال'), ta,
+            el('div', { class: 'btnrow' }, cbx('مطلوب', () => q.required, (v) => { q.required = v; }), cbx('فقرة', () => q.long, (v) => { q.long = v; })));
+        }));
+      };
+
+      put(box, head, tabsBox,
+        el('section', { class: 'panelc masterc' },
+          el('div', { class: 'trow' },
+            el('div', { class: 'mrow' }, el('span', { class: 'mico' }, icon('clipboardCheck')),
+              el('div', {}, el('h2', {}, 'تفعيل النموذج'), el('small', { class: 'muted' }, 'السماح للأعضاء بالتقديم'))),
+            sw),
+          el('label', { class: 'flabel' }, 'اسم النموذج'), nameIn),
+        sec('وصف النموذج', 'تعليمات قصيرة أو مقدمة تظهر فوق أسئلة النموذج', 'doc', 'gold', desc),
+        sec('فترة الانتظار', 'تعيين مدة فترة الانتظار بالثواني', 'clock', 'purple',
+          el('div', { class: 'rowbar' }, el('span', { class: 'muted' }, 'المدة'), cdOut), rng),
+        sec('السجلات', 'الروم الذي يجب نشر أحداث الطلبات فيه', 'hash', 'blue', chanSel('logChannel', 'اختر الروم...')),
+        sec('روم لوحة التقديم', 'الروم اللي بينرسل فيه زر التقديم', 'send', 'blue', chanSel('channel', 'اختر الروم...')),
+        sec('المراجعون', 'الرتب اللي تقدر تقبل وترفض (وأصحاب Manage Server دائماً)', 'users', 'orange',
+          multiPick(d.roles, f.reviewerRoles, 'أصحاب Manage Server فقط', ro, (v) => { f.reviewerRoles = v; touch(); })),
+        actCard('عند الرفض', 'الإجراءات التي يجب تنفيذها عند رفض الطلب', 'xcircle', 'red', f.reject),
+        actCard('عند القبول', 'الإجراءات التي يجب تنفيذها عند قبول الطلب', 'checkcircle', 'green', f.accept),
+        sec('الأسئلة', 'أضف ورتب أسئلة نموذج الطلب (حد أقصى 5)', 'listq', 'green', qBox, addQ),
+        el('div', { class: 'btnrow end' },
+          multi ? el('button', { class: 'btn ghost danger', type: 'button', disabled: ro, onclick: () => { if (!confirm('حذف هذا النموذج؟')) return; forms.splice(cur, 1); cur = Math.max(0, cur - 1); build(); } }, icon('trash'), 'حذف النموذج') : null,
+          el('button', { class: 'btn primary', type: 'button', disabled: ro, onclick: () => sendPanel(f) }, icon('send'), 'إرسال لوحة التقديم')),
+        el('p', { class: 'fine start' }, 'بعد التعديل: احفظ أولاً ثم اضغط «إرسال لوحة التقديم». حد ديسكورد للنافذة 5 أسئلة، وعنوان السؤال داخل النافذة أول 45 حرف.'),
+        bar.node);
+      drawQ(); bar.refresh();
+    }
+
+    put(box, el('p', { class: 'muted center' }, 'جاري التحميل...'));
+    load();
+    return box;
+  }  // =====================  أيقونات جديدة  =====================
+  Object.assign(ICONS, {
+    megaphone: '<path d="M3 11v2a1 1 0 0 0 1 1h3l8 4V6L7 10H4a1 1 0 0 0-1 1zM18 9a4 4 0 0 1 0 6"/>',
+    book: '<path d="M12 6c-1.5-1.3-3.5-2-6-2H3v14h3c2.5 0 4.5.7 6 2m0-14c1.5-1.3 3.5-2 6-2h3v14h-3c-2.5 0-4.5.7-6 2m0-14v14"/>',
+    monitor: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+    gavel: '<path d="M14 4l6 6M11 7l6 6-3 3-6-6zM9 11l-6 6 3 3 6-6M13 21h8"/>',
+    coins: '<ellipse cx="9" cy="7" rx="6" ry="3"/><path d="M3 7v5c0 1.7 2.7 3 6 3s6-1.3 6-3V7M15 10c3.3 0 6 1.3 6 3v4c0 1.7-2.7 3-6 3-1.8 0-3.4-.4-4.5-1"/>',
+    lifebuoy: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="M5.6 5.6l3.9 3.9M14.5 14.5l3.9 3.9M18.4 5.6l-3.9 3.9M9.5 14.5l-3.9 3.9"/>',
+    history: '<path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 7v5l3 2"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+    server: '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+  });
+  Object.assign(ERRS, { empty_update: 'اكتب نصاً أو أضف صورة قبل النشر.' });
+
+  // =====================  صفحة آخر التحديثات  =====================
+  function pageUpdates() {
+    const box = el('div', { class: 'page' });
+    const fl = flasher();
+    let d = null, composing = false;
+    const dt = (t) => new Date(t).toLocaleString('ar-EG', { dateStyle: 'long', timeStyle: 'short' });
+
+    async function load() {
+      try { d = await api('/api/updates'); } catch (e) { put(box, errorBox(load)); return; }
+      build();
+    }
+    async function del(u) {
+      const yes = await confirmModal({ title: 'حذف التحديث', text: 'سيتم حذف هذا التحديث نهائياً للجميع. هل أنت متأكد؟', okText: 'حذف', cancelText: 'إلغاء' });
+      if (!yes) return;
+      try { await apiSend('DELETE', `/api/updates/${u.id}`); fl.show('تم حذف التحديث'); load(); }
+      catch (e) { fl.show(errText(e), false); }
+    }
+
+    function composer() {
+      const pics = [];
+      const ta = el('textarea', { class: 'inp ta', rows: 6, maxlength: 4000, placeholder: 'اكتب نص التحديث هنا...', 'aria-label': 'نص التحديث' });
+      const thumbs = el('div', { class: 'upthumbs' });
+      const file = el('input', { type: 'file', accept: IMG_OK.join(','), multiple: true, class: 'hidden' });
+      const drawPics = () => put(thumbs, pics.map((p, i) =>
+        el('div', { class: 'upt' }, el('img', { src: p, alt: '' }),
+          el('button', { type: 'button', class: 'x', 'aria-label': 'إزالة', onclick: () => { pics.splice(i, 1); drawPics(); } }, '×'))));
+      file.addEventListener('change', async () => {
+        const files = [...file.files];
+        file.value = '';
+        for (const f of files) {
+          if (pics.length >= 4) { fl.show('الحد الأقصى 4 صور.', false); break; }
+          try { pics.push(await readImage(f, 3)); } catch (e) { fl.show(`${errText(e)} (الحد الأقصى 3MB)`, false); }
+        }
+        drawPics();
+      });
+      const pub = el('button', {
+        class: 'btn primary', type: 'button',
+        onclick: async () => {
+          if (!ta.value.trim() && !pics.length) return fl.show(ERRS.empty_update, false);
+          pub.disabled = true;
+          try {
+            await apiSend('POST', '/api/updates', { text: ta.value, images: pics });
+            fl.show('تم نشر التحديث ✅');
+            composing = false;
+            await load();
+          } catch (e) { fl.show(errText(e), false); pub.disabled = false; }
+        },
+      }, icon('send'), 'نشر التحديث');
+      return el('section', { class: 'panelc' },
+        el('div', { class: 'phd' }, el('span', { class: 'hbox gold' }, icon('pen')),
+          el('div', {}, el('h2', {}, 'تحديث جديد'), el('small', { class: 'muted' }, 'يظهر لكل مستخدمي الموقع بعد النشر'))),
+        ta, file, thumbs,
+        el('div', { class: 'btnrow end' },
+          el('button', { class: 'btn ghost small', type: 'button', onclick: () => file.click() }, icon('image'), 'إضافة صور (حتى 4)'),
+          pub));
+    }
+
+    const card = (u) => el('article', { class: 'panelc upd' },
+      el('div', { class: 'rowbar' },
+        el('span', { class: 'chip' }, dt(u.at)),
+        d.isOwner ? el('button', { class: 'btn ghost small danger', type: 'button', 'aria-label': 'حذف التحديث', onclick: () => del(u) }, icon('trash')) : null),
+      u.text ? el('p', { class: 'updtext' }, u.text) : null,
+      u.images && u.images.length
+        ? el('div', { class: 'updimgs' }, u.images.map((n) => {
+            const src = '/api/updates/img/' + n;
+            return el('a', { href: src, target: '_blank', rel: 'noopener' }, el('img', { src, alt: '', loading: 'lazy' }));
+          }))
+        : null);
+
+    function build() {
+      put(box,
+        el('p', { class: 'eyebrow' }, 'NEWS MODULE'),
+        el('h1', { class: 'greet' }, 'آخر التحديثات'),
+        el('p', { class: 'lead' }, 'تعرف على أحدث الميزات، التحسينات، والإصلاحات التي تم إضافتها.'),
+        fl,
+        d.isOwner ? el('div', { class: 'rowbar' },
+          el('span', { class: 'pbadge' }, icon('lock'), 'خاص بالمالك فقط'),
+          el('button', { class: 'btn primary small', type: 'button', onclick: () => { composing = !composing; build(); } },
+            icon(composing ? 'close' : 'plus'), composing ? 'إغلاق' : 'إضافة تحديث جديد')) : null,
+        composing ? composer() : null,
+        d.list.length
+          ? el('div', { class: 'stack' }, d.list.map(card))
+          : el('div', { class: 'empty boxed big' }, el('span', { class: 'emptyico' }, icon('megaphone')),
+              el('h3', {}, 'لا توجد تحديثات متاحة حالياً.')));
+    }
+
+    put(box, el('p', { class: 'muted center' }, 'جاري التحميل...'));
+    load();
+    return box;
+  }
+
+  // =====================  سجل الاشتراكات (تاب)  =====================
+  function pageSubsLog() {
+    const box = el('div', { class: 'page' });
+    let list = [], q = '', f = 'all';
+    const FIL = [['all', 'الكل'], ['active', 'نشط'], ['soon', 'قارب على الانتهاء'], ['expired', 'منتهي'], ['cancelled', 'ملغي']];
+    const ST = { active: ['نشط', 'on'], soon: ['قارب على الانتهاء', 'warn'], expired: ['منتهي', 'off'], cancelled: ['ملغي', 'off'] };
+    const chips = el('div', { class: 'fchips' });
+    const out = el('div', {});
+    const search = el('input', { class: 'inp', type: 'search', placeholder: 'البحث باسم السيرفر أو معرّفه (ID)...', 'aria-label': 'بحث' });
+
+    const card = (s) => {
+      const st = ST[s.status] || ST.expired;
+      return el('section', { class: 'panelc' },
+        el('div', { class: 'rowbar' },
+          el('div', { class: 'phd' },
+            el('span', { class: 'sgi' }, guildIcon(s, 44)),
+            el('div', {}, el('h3', {}, s.name), el('small', { class: 'muted mono' }, s.id))),
+          el('span', { class: 'stbadge ' + st[1] }, st[0])),
+        el('div', { class: 'arow' }, el('span', {}, 'ينتهي في'), el('b', {}, s.until ? fmtDate(s.until) : '—')),
+        s.history.slice().reverse().map((h) =>
+          el('small', { class: 'muted' }, `${fmtDate(h.start)} ← ${fmtDate(h.end)} (${AR(h.days)} يوم)${h.via === 'coin' ? ' · عملات OPS' : ''}`)));
+    };
+    const drawList = () => {
+      const l = list.filter((s) => (f === 'all' || s.status === f) && (!q || s.name.toLowerCase().includes(q) || s.id.includes(q)));
+      put(out, l.length
+        ? el('div', { class: 'stack' }, l.map(card))
+        : el('div', { class: 'empty boxed big' }, el('span', { class: 'emptyico' }, icon('server')),
+            el('h3', {}, 'لا توجد اشتراكات مطابقة'),
+            el('small', { class: 'muted' }, 'لم نجد أي اشتراكات سابقة أو حالية مطابقة لفلاتر البحث الحالية.')));
+    };
+    const drawChips = () => put(chips, FIL.map(([k, t]) =>
+      el('button', { type: 'button', class: 'fchip' + (f === k ? ' on' : ''), onclick: () => { f = k; drawChips(); drawList(); } }, t)));
+    search.addEventListener('input', () => { q = search.value.trim().toLowerCase(); drawList(); });
+
+    async function load() {
+      try { list = await api('/api/subscriptions'); } catch (e) { put(out, errorBox(load)); return; }
+      drawList();
+    }
+    put(box, el('section', { class: 'panelc' }, el('label', { class: 'sbox' }, icon('search'), search), chips), out);
+    drawChips();
+    put(out, el('p', { class: 'muted center' }, 'جاري التحميل...'));
+    load();
+    return box;
+  }
+
+  // صفحة البريميوم: تابين (الدليل / السجل)
+  function pagePremium(r) {
+    const box = el('div', { class: 'page' });
+    const guide = pagePremiumGuide(r);
+    const log = pageSubsLog();
+    let tab = 'guide';
+    const tabsBox = el('div', { class: 'bigtabs', role: 'tablist' });
+    const draw = () => {
+      put(tabsBox, [['guide', 'دليل المزايا والاشتراكات', 'book'], ['log', 'سجل الاشتراكات', 'history']].map(([id, l, ic]) =>
+        el('button', { type: 'button', role: 'tab', 'aria-selected': String(tab === id), class: 'bigtab' + (tab === id ? ' on' : ''), onclick: () => { tab = id; draw(); } }, icon(ic), l)));
+      guide.classList.toggle('hidden', tab !== 'guide');
+      log.classList.toggle('hidden', tab !== 'log');
+    };
+    put(box, tabsBox, guide, log);
+    draw();
+    return box;
+  }
+
+  // =====================  صفحة الدليل والشروحات  =====================
+  const GUIDE = [
+    { id: 'overview', title: 'نظرة عامة على الموقع', ic: 'monitor',
+      intro: 'لوحة التحكم الذكية (Dashboard) مصممة لتسهيل إدارة السيرفر وتخصيص البوت بخطوات بسيطة وواجهة عصرية.',
+      blocks: [
+        { t: 'إعدادات النظام الأساسية', d: 'تفعيل وتعطيل الأوامر، وتحديد الرتب والقنوات المسموحة لكل أمر، وإضافة اختصارات خاصة بك، وتخصيص بروفايل البوت داخل سيرفرك.' },
+        { t: 'نظام السجلات (Logs)', d: 'تخصيص قنوات محددة لتوثيق كل حركة في السيرفر (حذف رسائل، تغيير رتب، دخول صوتي) باحترافية.' },
+        { t: 'الترحيب والرتب التلقائية', d: 'تفعيل رسائل الترحيب والمغادرة بصور مخصصة، وإعطاء رتب تلقائية للأعضاء والبوتات الجدد.' },
+        { t: 'أنظمة المجتمع', d: 'التذاكر، التقديم، المستويات، الروم المؤقت، الفضفضة، والألوان، كلها تُدار من نفس اللوحة.' },
+      ] },
+    { id: 'security', title: 'بوت الحماية والأمان', ic: 'shield',
+      intro: 'حماية متقدمة للسيرفر ضد التخريب والريد، مع تقارير فورية للإدارة.',
+      blocks: [
+        { t: 'نظام الحدود Anti-Nuke (Limits)', danger: true, d: 'يراقب البوت الإجراءات الإدارية الحساسة (حذف قنوات، طرد وباند جماعي، التلاعب بالرتب). وإذا تجاوز أحد المشرفين الحد المسموح خلال 60 ثانية، يتم معاقبته بسحب صلاحياته أو طرده أو حظره حسب إعدادك.' },
+        { t: 'القائمة البيضاء (Whitelist)', d: 'خاصية مخصصة للثقات فقط. تتيح لهم تجاوز قيود الحماية بالكامل، ويضيفها مالك السيرفر فقط.' },
+        { t: 'حماية الصور (بريميوم)', d: 'مطابقة الصور المرفوعة مع مكتبة الصور الاحتيالية وحذفها ومعاقبة صاحبها تلقائياً.' },
+        { t: 'أوامر الحماية', d: 'أوامر سريعة لمراجعة وضع الحماية في السيرفر.', cmds: ['pslist!', 'bots!', 'advice!'] },
+      ] },
+    { id: 'admin', title: 'أوامر الإدارة والرقابة', ic: 'gavel',
+      intro: 'يوفر النظام مجموعة أوامر إشرافية متقدمة لضمان بيئة آمنة:',
+      blocks: [
+        { t: 'العقاب والعزل (Prison)', d: 'من أقوى أدوات الإدارة قبل الباند، حيث يتم سحب جميع رتب العضو وحجزه في قناة السجن الخاصة بحيث لا يمكنه رؤية باقي السيرفر، وترجع رتبه تلقائياً بعد انتهاء المدة.', cmds: ['prison! [user]', 'unprison! [user]', 'myprison! [user]'] },
+        { t: 'عقوبات الشات والصوت', d: 'ميوت كتابي وصوتي، تايم أوت، وتحذيرات مع سجل عقوبات لكل عضو.', cmds: ['mute! / unmute!', 'vmute! / unvmute!', 'timeout! / untimeout!', 'warn! / warnings!', 'dinfractions!'] },
+        { t: 'إدارة القنوات والأعضاء', d: 'التحكم بالرومات ومسح الرسائل وطرد وحظر الأعضاء.', cmds: ['lock! / unlock!', 'hide! / unhide!', 'slowmode!', 'clear!', 'kick! / ban! / unban!'] },
+        { t: 'التحكم بالصوت', d: 'سحب ونقل الأعضاء بين الرومات الصوتية.', cmds: ['move!', 'moveme!', 'moveto!', 'moveall!', 'vkick!'] },
+      ] },
+    { id: 'economy', title: 'بوت الاقتصاد ونقاط التفاعل', ic: 'coins',
+      intro: 'نظام OPS Coin: يكتسب الأعضاء عملات ونقاط تفاعل تلقائياً بمجرد المشاركة الإيجابية في السيرفر.',
+      blocks: [
+        { t: 'رتبة مخولي أوامر OPS', d: 'أوامر الاقتصاد تعمل في القنوات التي يحددها صاحب السيرفر، ويمكن تقييدها برتبة معينة من صفحة إعدادات المالية في لوحة التحكم.' },
+        { t: 'الرصيد', d: 'اكتب الأمر وحده لعرض رصيدك، أو مع منشن لرؤية رصيد عضو آخر.', cmds: ['رصيد', 'رصيد @عضو'] },
+        { t: 'المكافأة اليومية', d: 'مكافأة كل 24 ساعة. شرط عمر الحساب 14 يوماً أو أكثر.', cmds: ['مكافأة'] },
+        { t: 'التحويل الآمن', d: 'تحويل بين الأعضاء مع رمز تحقق: اضغط زر إظهار الرمز ثم أرسله في الشات لتأكيد العملية. يدعم الاختصارات k و m و b و t.', cmds: ['تحويل @عضو 20k', 'تحويل @عضو نص', 'تحويل @عضو كامل'] },
+        { t: 'التوب والمعلومات', d: 'قائمة الأغنياء ومعلومات حسابك.', cmds: ['توب', 'توب 2', 'معلومات'] },
+        { t: 'أوامر الإداريين', d: 'إضافة أو سحب رصيد عضو (للإداريين وبالسيرفرات المسموحة فقط).', cmds: ['اعطي @عضو المبلغ', 'سحب @عضو المبلغ'] },
+      ] },
+    { id: 'general', title: 'الأوامر العامة', ic: 'users',
+      intro: 'مجموعة من الأوامر المفيدة المتاحة للجميع لاستكشاف السيرفر وحالة الأعضاء:',
+      blocks: [
+        { t: 'معلومات الأعضاء', d: 'بطاقة الملف الشخصي، المستوى، الصورة والبنر، ومعلومات الحساب.', cmds: ['profile!', 'level!', 'avatar!', 'banner!', 'user!'] },
+        { t: 'السيرفر وحالة البوت', d: 'تفاصيل السيرفر وعدد الأعضاء، والتأكد من سرعة واستقرار البوت.', cmds: ['server!', 'ping!', 'botstatus!', 'statistics!'] },
+        { t: 'النقاط والترتيب', d: 'عرض النقاط وترتيب الرسائل في السيرفر أو في شات أو رتبة معينة.', cmds: ['point!', 'messages!'] },
+        { t: 'قائمة المساعدة', d: 'تعرض كل الأوامر المفعلة في سيرفرك مقسمة حسب الأقسام.', cmds: ['help!'] },
+      ] },
+  ];
+
+  function pageGuide() {
+    const tip = () => el('div', { class: 'gtip' },
+      el('div', { class: 'phd' }, el('span', { class: 'tipico' }, icon('bolt')), el('h3', {}, 'نصيحة سريعة')),
+      el('p', { class: 'muted' }, 'يمكنك دائماً استخدام الأمر ', el('code', { class: 'gcmd', dir: 'ltr' }, 'help!'), ' في الديسكورد لمعرفة المزيد عن الأوامر.'),
+      el('a', { class: 'btn primary small', href: me.supportUrl, target: '_blank', rel: 'noopener' }, icon('users'), 'تحتاج مساعدة؟'));
+
+    const panel = (s) => el('div', { class: 'gpanel' },
+      el('div', { class: 'phd' }, el('span', { class: 'mico' }, icon(s.ic)),
+        el('div', {}, el('h2', {}, s.title), el('small', { class: 'gmod' }, 'GUIDE CORE MODULE'))),
+      el('div', { class: 'sep' }),
+      el('p', { class: 'lead' }, s.intro),
+      s.blocks.map((b) => el('div', { class: 'gcard' + (b.danger ? ' danger' : '') },
+        el('h4', {}, b.t), el('p', {}, b.d),
+        b.cmds ? el('div', { class: 'gcmds' }, b.cmds.map((c) => el('code', { class: 'gcmd', dir: 'ltr' }, c))) : null)),
+      tip());
+
+    let openId = 'overview';
+    const secs = GUIDE.map((s) => {
+      const head = el('button', { type: 'button', class: 'gitem', 'aria-expanded': 'false' }, icon(s.ic), el('span', {}, s.title), icon('chevron', 'chev'));
+      const node = el('div', { class: 'gsec' }, head, el('div', { class: 'gwrap' }, el('div', { class: 'gbody' }, panel(s))));
+      head.addEventListener('click', () => setOpen(openId === s.id ? null : s.id));
+      return { id: s.id, node, head };
+    });
+    function setOpen(id) {
+      openId = id;
+      secs.forEach((x) => { const on = x.id === id; x.node.classList.toggle('open', on); x.head.setAttribute('aria-expanded', String(on)); });
+    }
+    setOpen(openId);
+
+    return el('div', { class: 'page' },
+      el('p', { class: 'eyebrow' }, 'GUIDE CORE MODULE'),
+      el('h1', { class: 'greet' }, 'الدليل الشامل ', el('span', { class: 'gold' }, 'OPS SYSTEM')),
+      el('p', { class: 'lead' }, 'تعرف على جميع مميزات وكيفية استخدام البوت باحترافية'),
+      el('div', { class: 'gacc' }, secs.map((x) => x.node)));
   }
   function pageNoBot(g) {
     return el('div', { class: 'page' },
@@ -9890,6 +13557,13 @@ loadCoin();
       case 'tempvoice': return pageTempVoice(r);
       case 'vent': return pageVent(r);
       case 'tickets': return pageTickets(r);
+            case 'tktlog': return pageTktLog(r);
+                  case 'tktshort': return pageTktShortcuts(r);
+            case 'apply': return pageApply(r, false);
+      case 'apply-forms': {
+        const pg = guilds.find((x) => x.id === r.gid);
+        return pg && pg.premium ? pageApply(r, true) : premPage(r.gid, 'APPLICATIONS', 'نماذج التقديم');
+      }
             case 'autoline': return pageAutoLine(r);
                   case 'autoreact': return pageAutoReact(r);      
       case 'colors': return pageColors(r);
@@ -10236,7 +13910,54 @@ loadCoin();
     put(box, el('p', { class: 'muted center' }, 'جاري التحميل...'));
     load();
     return box;
+  }  // ---- تحويل كل <select class="sel"> لقائمة مخصصة ----
+  function enhanceSelect(sel) {
+    if (sel.dataset.enh) return;
+    sel.dataset.enh = '1';
+    sel.style.display = 'none';
+
+    const label = el('span', { class: 'cs-label' });
+    const chev = icon('chevron', 'cs-chev');
+    const head = el('button', { type: 'button', class: 'cs-head', 'aria-haspopup': 'listbox', 'aria-expanded': 'false' }, label, chev);
+    const list = el('div', { class: 'cs-list', role: 'listbox' });
+    const wrap = el('div', { class: 'cs' + (sel.classList.contains('full') ? ' full' : '') }, head, list);
+    sel.after(wrap);
+
+    const sync = () => {
+      const o = sel.options[sel.selectedIndex];
+      label.textContent = o ? o.textContent : '';
+      head.disabled = sel.disabled;
+      list.querySelectorAll('.cs-opt').forEach((x) => x.classList.toggle('on', x.dataset.v === sel.value));
+    };
+    const build = () => {
+      put(list, [...sel.options].map((o) =>
+        el('button', {
+          type: 'button', role: 'option', class: 'cs-opt' + (o.value === sel.value ? ' on' : ''), 'data-v': o.value,
+          onclick: () => {
+            sel.value = o.value;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            sync(); close();
+          },
+        }, el('span', {}, o.textContent), o.value === sel.value ? icon('check', 'cs-tick') : null)));
+      sync();
+    };
+    const close = () => { wrap.classList.remove('open'); head.setAttribute('aria-expanded', 'false'); };
+    const open = () => {
+      document.querySelectorAll('.cs.open').forEach((x) => x !== wrap && x.classList.remove('open'));
+      build();
+      wrap.classList.add('open');
+      head.setAttribute('aria-expanded', 'true');
+      const r = wrap.getBoundingClientRect();
+      wrap.classList.toggle('up', window.innerHeight - r.bottom < 280 && r.top > 280);
+    };
+    head.addEventListener('click', (e) => { e.stopPropagation(); wrap.classList.contains('open') ? close() : open(); });
+    wrap.addEventListener('keydown', (e) => { if (e.key === 'Escape') { close(); head.focus(); } });
+    document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) close(); });
+    new MutationObserver(build).observe(sel, { childList: true, attributes: true, attributeFilter: ['disabled'] });
+    build();
   }
+  new MutationObserver(() => document.querySelectorAll('select.sel:not([data-enh])').forEach(enhanceSelect))
+    .observe(document.body, { childList: true, subtree: true });
   // ---- القائمة الجانبية ----
   const parse = () => {
     const p = (location.hash || '#/').slice(1).split('/').filter(Boolean);
@@ -10265,6 +13986,8 @@ loadCoin();
         { id: 'servers', label: 'السيرفرات', ic: 'grid', href: '#/servers' },
         { id: 'leaders', label: 'لوحة المتصدرين', ic: 'trophy', href: '#/leaders' },
         { id: 'transactions', label: 'سجل عمليات OPS', ic: 'coin', href: '#/transactions' },
+                { id: 'updates', label: 'آخر التحديثات', ic: 'megaphone', href: '#/updates' },
+        { id: 'guide', label: 'الدليل والشروحات', ic: 'book', href: '#/guide' },
         { id: 'support', label: 'الدعم الفني', ic: 'lifebuoy', href: 'https://discord.gg/XN6RfY4nc', ext: true },
       ];
     }
@@ -10295,7 +14018,7 @@ loadCoin();
           ? guildPage(r)
           : el('div', { class: 'empty' }, 'هذا السيرفر غير متاح. تأكد أن البوت موجود فيه وأنك عضو فيه.');
       } else {
-        node = r.page === 'premium' ? pagePremium(r) : r.page === 'transactions' ? pageTransactions() : r.page === 'leaders' ? await pageLeaders() : r.page === 'servers' ? pageServers() : await pageHome();
+        node = r.page === 'premium' ? pagePremium(r) : r.page === 'updates' ? pageUpdates() : r.page === 'guide' ? pageGuide() : r.page === 'transactions' ? pageTransactions() : r.page === 'leaders' ? await pageLeaders() : r.page === 'servers' ? pageServers() : await pageHome();
       }
       if (my !== token) return;
       put(view, node);
@@ -10306,6 +14029,11 @@ loadCoin();
   }
 
   (async function init() {
+        window.addEventListener('unhandledrejection', (e) => {
+      const m = String((e.reason && e.reason.stack) || e.reason);
+      console.error(e.reason);
+      put(view, el('div', { class: 'notice show', dir: 'ltr' }, 'JS error: ' + m.slice(0, 400)));
+    });
     $('#burger').append(icon('menu'));
         try { localStorage.setItem('opsAuthed', '1'); } catch (_) {}
     try {
@@ -11125,6 +14853,282 @@ body::after {
   border: 1px solid #fff;
 }
 .hbtn.entered .bt { mix-blend-mode: difference; }
+input[type=range] { width: 100%; accent-color: #fff; cursor: pointer; }
+input[type=range]:disabled { opacity: .45; cursor: not-allowed; }
+.hbox.green { background: #0f2a1c; color: #22c55e; }
+.hbox.red { background: #2a1215; color: #ef4444; }
+.msubitem.hasic { display: flex; align-items: center; gap: 10px; }
+.msubitem .ico { width: 20px; height: 20px; }
+/* ===== مودال التأكيد + مربع النجاح ===== */
+.cm-ov { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.65); backdrop-filter: blur(6px); animation: cmfade .18s ease; }
+.cm-box { width: min(420px, 100%); background: #0e0e12; border: 1px solid #2a2b33; border-radius: 26px; padding: 30px 26px 24px; display: grid; gap: 12px; justify-items: center; text-align: center; box-shadow: 0 30px 80px rgba(0,0,0,.8); animation: cmpop .22s ease; }
+.cm-ico { width: 68px; height: 68px; border-radius: 50%; display: grid; place-items: center; background: #17181b; border: 1px solid #3a3b45; color: #fff; }
+.cm-ico .ico { width: 32px; height: 32px; }
+.cm-box h3 { font-size: 1.3rem; font-weight: 800; }
+.cm-box p { color: #a1a5b3; line-height: 1.9; }
+.cm-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; margin-top: 10px; }
+.cm-btn { height: 52px; border-radius: 16px; border: 1px solid transparent; font: 800 1rem var(--font); cursor: pointer; transition: transform .15s, filter .15s; }
+.cm-btn:hover { transform: translateY(-2px); filter: brightness(1.1); }
+.cm-btn:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.cm-btn.ok { background: #fff; color: #000; }
+.cm-btn.cancel { background: #17181d; color: #fff; border-color: #2a2b33; }
+.okbox { position: fixed; top: 22px; left: 50%; z-index: 300; transform: translate(-50%, -30px); opacity: 0; display: flex; align-items: center; gap: 14px; width: min(480px, calc(100% - 28px)); padding: 18px 22px; border-radius: 20px; background: linear-gradient(135deg, #0f2a1c, #0b1f15); border: 1px solid #22c55e; color: #bbf7d0; font-weight: 800; line-height: 1.7; box-shadow: 0 18px 50px rgba(0,0,0,.6), 0 0 30px rgba(34,197,94,.35); transition: transform .35s ease, opacity .35s ease; }
+.okbox.show { transform: translate(-50%, 0); opacity: 1; }
+.okico { width: 40px; height: 40px; border-radius: 50%; background: #22c55e; color: #04210f; display: grid; place-items: center; flex: none; }
+.okico .ico { width: 22px; height: 22px; }
+.okbox.bad { background: linear-gradient(135deg, #2a1215, #1c0b0d); border-color: #ef4444; color: #fecaca; box-shadow: 0 18px 50px rgba(0,0,0,.6), 0 0 30px rgba(239,68,68,.3); }
+@keyframes cmfade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cmpop { from { opacity: 0; transform: scale(.92) translateY(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .cm-ov, .cm-box { animation: none; } .okbox { transition: none; } }
+/* ===== قائمة منسدلة مخصصة ===== */
+.cs { position: relative; display: inline-block; min-width: 190px; }
+.cs.full { display: block; width: 100%; }
+.cs-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; background: #09090c; color: #fff; border: 1px solid #23242c; border-radius: 14px; padding: 12px 16px; font: 700 .95rem var(--font); cursor: pointer; text-align: start; transition: border-color .15s, box-shadow .15s; }
+.cs-head:hover:not(:disabled) { border-color: #4b4b52; }
+.cs.open .cs-head { border-color: #fff; box-shadow: 0 0 0 1px #fff; }
+.cs-head:disabled { opacity: .45; cursor: not-allowed; }
+.cs-head:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.cs-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-chev { width: 18px; height: 18px; color: #8f94a3; transition: transform .2s; flex: none; }
+.cs.open .cs-chev { transform: rotate(180deg); color: #fff; }
+.cs-list { position: absolute; top: calc(100% + 8px); inset-inline: 0; z-index: 80; max-height: 260px; overflow-y: auto; padding: 8px; display: grid; gap: 3px; background: #0e0e12; border: 1px solid #2a2b33; border-radius: 16px; box-shadow: 0 20px 50px rgba(0,0,0,.75); opacity: 0; transform: translateY(-8px) scale(.98); pointer-events: none; visibility: hidden; transition: opacity .16s ease, transform .16s ease, visibility .16s; scrollbar-width: thin; scrollbar-color: #2a2b33 transparent; }
+.cs.up .cs-list { top: auto; bottom: calc(100% + 8px); transform: translateY(8px) scale(.98); }
+.cs.open .cs-list { opacity: 1; transform: none; pointer-events: auto; visibility: visible; }
+.cs-opt { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: none; border: 0; color: #c9ccd6; font: 700 .92rem var(--font); padding: 11px 14px; border-radius: 10px; cursor: pointer; text-align: start; }
+.cs-opt span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-opt:hover, .cs-opt:focus-visible { background: #1a1b21; color: #fff; outline: none; }
+.cs-opt.on { background: rgba(255,255,255,.1); color: #fff; }
+.cs-tick { width: 18px; height: 18px; color: #22c55e; flex: none; }
+.ccard:has(.cs.open), .panelc:has(.cs.open) { overflow: visible; position: relative; z-index: 5; }
+@media (prefers-reduced-motion: reduce) { .cs-list, .cs-chev { transition: none; } }
+/* ===== أنيميشن فتح المجموعات ===== */
+.msubwrap { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .3s ease, opacity .25s ease; }
+.msubwrap.open { grid-template-rows: 1fr; opacity: 1; }
+.msubwrap > .msub { overflow: hidden; min-height: 0; margin-bottom: 0; }
+.msubwrap.open > .msub { margin-bottom: 6px; }
+.msubwrap:not(.open) > .msub { pointer-events: none; }
+.msub .msubitem { transform: translateX(10px); opacity: 0; transition: transform .3s ease, opacity .3s ease, background .15s; }
+[dir="rtl"] .msub .msubitem { transform: translateX(-10px); }
+.msubwrap.open .msubitem { transform: none; opacity: 1; }
+.msubwrap.open .msubitem:nth-child(1) { transition-delay: .03s; }
+.msubwrap.open .msubitem:nth-child(2) { transition-delay: .06s; }
+.msubwrap.open .msubitem:nth-child(3) { transition-delay: .09s; }
+.msubwrap.open .msubitem:nth-child(4) { transition-delay: .12s; }
+.msubwrap.open .msubitem:nth-child(5) { transition-delay: .15s; }
+.msubwrap.open .msubitem:nth-child(6) { transition-delay: .18s; }
+.mitem .chev { transition: transform .3s ease; }
+@media (prefers-reduced-motion: reduce) { .msubwrap, .msub .msubitem, .mitem .chev { transition: none; } }
+/* ===== تأثير خفيف عند الماوس / اللمس ===== */
+.btn, .hbtn, .tab, .ptab, .mtab, .bigtab, .fchip, .gitem, .vchip, .fopt, .setcard, .elbtn, .addbox, .cm-btn, .plus, .srvcard, .ritem, .mitem, .logout, .scard, .fcard, .embcard, .icard, .xcard, .lrow {
+  transition: transform .18s ease, background-color .18s ease, border-color .18s ease, box-shadow .18s ease, filter .18s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .btn:hover:not(:disabled), .hbtn:hover, .tab:hover, .ptab:hover:not(:disabled), .mtab:hover:not(:disabled), .bigtab:hover, .fchip:hover, .vchip:hover:not(:disabled), .fopt:hover:not(:disabled), .setcard:hover:not(:disabled), .elbtn:hover, .addbox:hover:not(:disabled), .plus:hover:not(:disabled), .ritem:hover { transform: translateY(-2px); }
+  .scard:hover, .fcard:hover, .embcard:hover, .icard:hover, .xcard:hover, .srvcard:hover, .lrow:hover { transform: translateY(-3px); border-color: rgba(255,255,255,.35); box-shadow: 0 10px 28px rgba(0,0,0,.45); }
+  .gitem:hover { border-color: rgba(255,255,255,.4); background: rgba(255,255,255,.05); }
+  .panelc:hover { border-color: #2a2b33; }
+}
+.btn:active:not(:disabled), .hbtn:active, .tab:active, .ptab:active:not(:disabled), .mtab:active:not(:disabled), .bigtab:active, .fchip:active, .gitem:active, .vchip:active:not(:disabled), .fopt:active:not(:disabled), .setcard:active:not(:disabled), .elbtn:active, .addbox:active:not(:disabled), .cm-btn:active, .plus:active:not(:disabled), .srvcard:active, .ritem:active, .mitem:active, .scard:active, .embcard:active, .icard:active { transform: scale(.96); filter: brightness(.92); }
+
+/* ===== تابات البريميوم ===== */
+.bigtabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px; border-radius: 22px; background: rgba(8,8,10,.72); border: 1px solid #1b1c23; }
+.bigtab { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px; border-radius: 16px; background: none; border: 0; color: #a6aab8; font: 800 .95rem var(--font); cursor: pointer; }
+.bigtab .ico { width: 18px; height: 18px; }
+.bigtab.on { background: #fff; color: #000; }
+.bigtab:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* ===== سجل الاشتراكات ===== */
+.sbox { display: flex; align-items: center; gap: 12px; background: #09090c; border: 1px solid #23242c; border-radius: 18px; padding: 0 18px; color: #8f94a3; }
+.sbox:focus-within { border-color: #fff; }
+.sbox .inp { border: 0; background: transparent; padding: 16px 0; }
+.sbox .inp:focus-visible { outline: none; }
+.fchips { display: flex; flex-wrap: wrap; gap: 10px; }
+.fchip { padding: 10px 18px; border-radius: 12px; background: #17181d; border: 1px solid #23242c; color: #b8bbc7; font: 800 .88rem var(--font); cursor: pointer; }
+.fchip.on { background: rgba(255,255,255,.12); border-color: #fff; color: #fff; }
+.fchip:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.stbadge { padding: 4px 14px; border-radius: 12px; font-size: .8rem; font-weight: 800; border: 1px solid; }
+.stbadge.on { background: rgba(34,197,94,.14); color: #4ade80; border-color: rgba(34,197,94,.4); }
+.stbadge.warn { background: rgba(251,191,36,.12); color: #fbbf24; border-color: rgba(251,191,36,.4); }
+.stbadge.off { background: rgba(239,68,68,.12); color: #f87171; border-color: rgba(239,68,68,.4); }
+.sgi img, .sgi .fb { width: 44px; height: 44px; border-radius: 12px; object-fit: cover; display: block; }
+.empty.big { padding: 60px 14px; }
+.empty.big h3 { color: #fff; font-size: 1.2rem; }
+.emptyico { width: 76px; height: 76px; border-radius: 22px; display: grid; place-items: center; background: #17181b; border: 1px solid #2a2b33; color: #a1a5b3; }
+.emptyico .ico { width: 34px; height: 34px; }
+
+/* ===== التحديثات ===== */
+.updtext { white-space: pre-wrap; line-height: 2; color: #e4e6ee; overflow-wrap: anywhere; }
+.updimgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.updimgs img { width: 100%; max-height: 300px; object-fit: cover; border-radius: 16px; border: 1px solid #1b1c23; display: block; transition: transform .2s; }
+.updimgs a:hover img { transform: scale(1.02); }
+.upthumbs { display: flex; flex-wrap: wrap; gap: 10px; }
+.upt { position: relative; width: 96px; height: 96px; }
+.upt img { width: 100%; height: 100%; object-fit: cover; border-radius: 14px; border: 1px solid #23242c; }
+.upt .x { position: absolute; top: -8px; inset-inline-end: -8px; width: 26px; height: 26px; border-radius: 50%; background: #ef4444; color: #fff; border: 0; cursor: pointer; font-size: 1rem; line-height: 1; }
+
+/* ===== الدليل ===== */
+.gacc { display: grid; gap: 14px; }
+.gitem { display: flex; align-items: center; gap: 14px; width: 100%; padding: 20px 22px; border-radius: 22px; background: rgba(8,8,10,.72); border: 1px solid #1b1c23; color: #a6aab8; font: 800 1.05rem var(--font); cursor: pointer; text-align: start; }
+.gitem .ico { width: 26px; height: 26px; flex: none; }
+.gitem .chev { margin-inline-start: auto; width: 20px; height: 20px; transition: transform .3s ease; }
+.gitem:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.gsec.open > .gitem { background: #fff; color: #000; border-color: #fff; }
+.gsec.open > .gitem .chev { transform: rotate(180deg); }
+.gwrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .35s ease; }
+.gsec.open > .gwrap { grid-template-rows: 1fr; }
+.gbody { overflow: hidden; min-height: 0; }
+.gpanel { margin-top: 14px; padding: 24px; display: grid; gap: 16px; background: rgba(8,8,10,.8); border: 1px solid #1b1c23; border-radius: 26px; }
+.gmod { display: block; color: #8f94a3; font-weight: 800; letter-spacing: 1.5px; margin-top: 4px; }
+.gcard { background: rgba(255,255,255,.03); border: 1px solid #1b1c23; border-radius: 20px; padding: 20px; display: grid; gap: 10px; }
+.gcard h4 { font-size: 1.1rem; font-weight: 800; color: #fff; }
+.gcard p { color: #9aa0ae; line-height: 1.9; }
+.gcard.danger { background: rgba(239,68,68,.07); border-color: rgba(239,68,68,.35); }
+.gcard.danger h4 { color: #f87171; }
+.gcmds { display: flex; flex-wrap: wrap; gap: 10px; }
+.gcmd { display: inline-block; padding: 8px 16px; border-radius: 12px; background: #17181d; border: 1px solid #2a2b33; color: #fff; font: 800 .85rem ui-monospace, Consolas, monospace; }
+.gtip { display: grid; gap: 12px; justify-items: center; text-align: center; padding: 26px 20px; border-radius: 24px; background: rgba(255,255,255,.04); border: 1px solid #2a2b33; margin-top: 8px; }
+.tipico { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: #fff; color: #000; }
+.tipico .ico { width: 22px; height: 22px; }
+@media (prefers-reduced-motion: reduce) { .gwrap, .gitem .chev, .updimgs img { transition: none; } }
+/* ===== أيقونة البرق ===== */
+.boltbadge { width: 28px; height: 28px; background: none; color: #0a0a0d; display: grid; place-items: center; flex: none; transition: transform .2s ease; }
+.boltbadge svg { width: 19px; height: 19px; }
+.hbtn:hover .boltbadge { transform: rotate(-10deg) scale(1.1); }
+
+/* ===== سجل العمليات ===== */
+.amt { font-size: 1.05rem; white-space: nowrap; }
+.amt.in { color: #4ade80; }
+.amt.out { color: #f87171; }
+.txgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.txcard { display: grid; gap: 8px; padding: 18px; border-radius: 20px; background: rgba(8,8,10,.72); border: 1px solid #1b1c23; }
+.txcard small { display: flex; align-items: center; gap: 6px; }
+.txcard small .ico { width: 16px; height: 16px; }
+.txreason { color: #e4e6ee; font-weight: 700; line-height: 1.8; }
+/* ===== شريط الحفظ الجديد ===== */
+body.has-savebar .dmain { padding-bottom: 150px; }
+.savebar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  bottom: 18px; padding: 14px 18px; border-radius: 22px;
+  background: linear-gradient(135deg, rgba(22,22,28,.97), rgba(9,9,13,.97));
+  border: 1px solid rgba(255,255,255,.22);
+  box-shadow: 0 20px 60px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.04) inset, 0 0 40px rgba(255,255,255,.06);
+  animation: sbup .4s cubic-bezier(.2,.9,.3,1.15);
+}
+.sbbtns { display: flex; gap: 10px; }
+.sbbtns .btn { height: 46px; padding: 0 28px; min-width: 130px; border-radius: 14px; }
+.sbdot { animation: sbpulse 1.4s ease-in-out infinite; }
+@keyframes sbup { from { opacity: 0; transform: translate(-50%, 50px) scale(.95); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+@keyframes sbpulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(1.5); } }
+@media (max-width: 620px) {
+  .savebar { flex-direction: column; align-items: stretch; }
+  .sbbtns { display: grid; grid-template-columns: 1fr 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .savebar, .sbdot { animation: none; } }
+/* ===== V2 ===== */
+.v2box { display: grid; gap: 14px; }
+.rpemb hr { border: 0; border-top: 1px solid #3f4147; width: 100%; margin: 4px 0; }
+/* ===== V2 blocks ===== */
+.v2opts { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
+.bcard { background: #131316; border: 1px solid #23242c; border-radius: 16px; overflow: hidden; }
+.bhead { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #17171b; border-bottom: 1px solid #23242c; }
+.btitle { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; color: #c9ccd6; }
+.btitle .ico { width: 16px; height: 16px; }
+.bctl { display: flex; gap: 2px; }
+.bmv { width: 30px; height: 30px; border-radius: 8px; border: 0; background: none; color: #a6aab8; cursor: pointer; font-size: 1rem; }
+.bmv:hover:not(:disabled) { background: #1f2026; color: #fff; }
+.bmv:disabled { opacity: .3; cursor: not-allowed; }
+.bx { margin-inline-start: auto; width: 30px; height: 30px; border-radius: 8px; border: 0; background: none; color: #ef4444; cursor: pointer; display: grid; place-items: center; }
+.bx .ico { width: 18px; height: 18px; }
+.bx:hover:not(:disabled) { background: rgba(239,68,68,.12); }
+.bbody { padding: 14px; display: grid; gap: 12px; }
+.bbody .ta { min-height: 90px; }
+.bbody .subrow > .ta { flex: 1 1 200px; }
+.mtabs.full { width: 100%; }
+.mtabs.full .mtab { flex: 1; justify-content: center; }
+.reqb { width: fit-content; padding: 3px 12px; border-radius: 10px; background: rgba(251,191,36,.12); border: 1px solid rgba(251,191,36,.4); color: #fbbf24; font-weight: 800; font-size: .8rem; }
+.galadd { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 18px; border-radius: 16px; background: none; border: 2px dashed #2a2b33; color: #b8bbc7; font: 800 .9rem var(--font); cursor: pointer; }
+.galadd:hover { border-color: #fff; color: #fff; }
+.dim { opacity: .55; }
+.rpst.s-link { background: #4f545c; }
+.rpgal { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 4px; }
+.rpgal img { width: 100%; max-height: 220px; object-fit: cover; border-radius: 8px; }
+.cm-box.lm { width: min(520px, 100%); justify-items: stretch; text-align: start; }
+.lm .rowbar { flex-wrap: nowrap; }
+.lm h3 { display: flex; align-items: center; gap: 10px; }
+.lm h3 .ico { color: #fbbf24; }
+.lm-up { background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.35); border-radius: 16px; padding: 16px; display: grid; gap: 10px; }
+.lm-up b { color: #fbbf24; display: flex; align-items: center; gap: 8px; }
+.lm-up ul { margin: 0; padding-inline-start: 22px; color: #e4d49a; line-height: 2; }
+.lm a.btn { height: 54px; background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #000; text-decoration: none; }
+.islot { display: grid; }
+.subrow > .islot { flex: 0 0 auto; }
+.idrop { display: grid; gap: 8px; justify-items: center; align-content: center; min-width: 110px; min-height: 110px; padding: 12px; border-radius: 16px; border: 2px dashed #2a2b33; background: transparent; color: #8f94a3; font: 700 .85rem var(--font); cursor: default; }
+.idrop .ico { width: 24px; height: 24px; }
+.ibtns { display: grid; gap: 2px; }
+.ibtn { display: flex; align-items: center; gap: 6px; background: none; border: 0; color: #c9ccd6; font: 700 .85rem var(--font); cursor: pointer; padding: 3px 8px; border-radius: 8px; }
+.ibtn:hover:not(:disabled) { background: #1a1b21; color: #fff; }
+.ibtn .ico { width: 16px; height: 16px; }
+.ibtn:disabled { opacity: .45; cursor: not-allowed; }
+.ipv { position: relative; width: 110px; height: 110px; border-radius: 16px; overflow: hidden; border: 1px solid #23242c; background: #09090c; }
+.ipv img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ix { position: absolute; top: 6px; inset-inline-end: 6px; width: 26px; height: 26px; border-radius: 50%; border: 0; background: #ef4444; color: #fff; cursor: pointer; display: grid; place-items: center; }
+.ix .ico { width: 14px; height: 14px; }
+.galrow { display: flex; flex-wrap: wrap; gap: 12px; }
+.galcell { position: relative; }
+.galx { position: absolute; top: -8px; inset-inline-end: -8px; width: 26px; height: 26px; margin: 0; border-radius: 50%; background: #ef4444; color: #fff; z-index: 2; }
+.gadd { cursor: pointer; }
+.gadd:hover:not(:disabled) { border-color: #fff; color: #fff; }
+.galpick { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; max-height: 340px; overflow-y: auto; }
+.galit { padding: 0; height: 96px; border-radius: 12px; overflow: hidden; border: 2px solid transparent; background: #09090c; cursor: pointer; }
+.galit:hover { border-color: #fff; }
+.galit img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.v2alert { display: flex; align-items: center; gap: 14px; padding: 16px 20px; border-radius: 16px; background: #1c0b0d; border: 1px solid #7f1d1d; color: #fecaca; }
+.v2alert .ico { width: 26px; height: 26px; color: #ef4444; flex: none; }
+.v2alert b { display: block; line-height: 1.8; }
+.v2alert small { color: #b4636a; }
+/* ===== الحماية التلقائية + العامة ===== */
+.rcard { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 22px; background: rgba(8,8,10,.72); border: 1px solid #1b1c23; }
+.rc-info { flex: 1; min-width: 0; display: grid; gap: 8px; }
+.rc-info b { font-size: 1.1rem; }
+.rc-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.rc-ctl { display: flex; align-items: center; gap: 10px; }
+.rm-box { width: min(760px, 100%); max-height: 92vh; display: grid; grid-template-rows: auto 1fr auto; background: #0b0b0e; border: 1px solid #23242c; border-radius: 26px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.8); animation: cmpop .22s ease; }
+.rm-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 24px; border-bottom: 1px solid #17181e; }
+.rm-head h3 { font-size: 1.3rem; font-weight: 800; }
+.rm-x { width: 40px; height: 40px; border-radius: 50%; border: 0; background: #17181d; color: #c9ccd6; cursor: pointer; display: grid; place-items: center; }
+.rm-x:hover { background: #23242c; color: #fff; }
+.rm-x .ico { width: 18px; height: 18px; }
+.rm-body { overflow-y: auto; padding: 22px 24px; display: grid; gap: 16px; align-content: start; scrollbar-width: thin; scrollbar-color: #5a4a1a transparent; }
+.rm-foot { display: flex; gap: 12px; padding: 16px 24px; border-top: 1px solid #17181e; background: #0b0b0e; }
+.rm-tog { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px; border-radius: 18px; background: #09090c; border: 1px solid #17181e; }
+.rm-tog small { display: block; }
+.rm-type { display: grid; gap: 6px; justify-items: center; padding: 18px; width: min(280px, 100%); border-radius: 18px; background: rgba(251,191,36,.08); border: 1px solid #fbbf24; color: #fbbf24; }
+.cntb { font: 800 .75rem ui-monospace, Consolas, monospace; padding: 3px 10px; border-radius: 8px; background: #17181d; border: 1px solid #2a2b33; color: #b8bbc7; }
+.center2 { width: 100%; text-align: center; padding: 18px 0; font-style: italic; }
+.achip .mbadge { font-style: normal; }
+.actrow2 { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px; border-radius: 16px; background: #0e0e12; border: 1px solid #1b1c23; }
+.actrow2 .cs, .actrow2 .inp { flex: 1 1 180px; }
+.delx { width: 48px; height: 48px; padding: 0; background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.3); }
+.addbox.gold, .addbox.white { border: 1px dashed rgba(255,255,255,.5); background: rgba(255,255,255,.07); color: #fff; }
+.actrow2 .inp[type=number] { flex: 0 1 120px; text-align: center; }
+.btn.b-gold, .btn.b-blue, .btn.b-green { background: #fff; color: #000; }
+.btn.b-black { background: #000; color: #fff; border: 1px solid rgba(255,255,255,.35); }
+.btn.b-black:hover { border-color: #fff; }
+.addrow .btn.small { flex: none; }
+@media (max-width: 520px) { .rcard { flex-wrap: wrap; } .rm-body, .rm-head, .rm-foot { padding-inline: 16px; } }
+.switch.on.t-blue { background: #2563eb; border-color: #3b82f6; box-shadow: 0 0 16px rgba(59,130,246,.5); }
+.switch.on.t-orange { background: #f97316; border-color: #fb923c; box-shadow: 0 0 16px rgba(249,115,22,.5); }
+.switch.on.t-gold { background: #fbbf24; border-color: #fcd34d; box-shadow: 0 0 16px rgba(251,191,36,.5); }
+.switch.on.t-red { background: #ef4444; border-color: #f87171; box-shadow: 0 0 16px rgba(239,68,68,.5); }
+.switch.on[class*="t-"] i { background: #fff; }
+.tbox { background: rgba(249,115,22,.06); border: 1px solid rgba(249,115,22,.18); border-radius: 18px; padding: 16px; display: grid; gap: 10px; }
+.pctb { color: #fb923c; font: 800 1rem ui-monospace, Consolas, monospace; }
+.rng-orange { accent-color: #ff7a00; }
+.hbox.pink { background: #3a1030; color: #ec4899; }
+.switch.on.t-purple { background: #9333ea; border-color: #a855f7; box-shadow: 0 0 16px rgba(168,85,247,.5); }
+.emomodal { display: grid; gap: 12px; max-height: 60vh; overflow-y: auto; scrollbar-width: thin; }
+.emomodal .emogrid { gap: 8px; }
 `;
 
 
@@ -11153,7 +15157,7 @@ const INDEX_HTML = `<!doctype html>
       <p class="hero-desc">ارتقِ بمجتمعك مع أقوى نظام إدارة ذكي لسيرفرات ديسكورد. تصميم جريء، أداء فائق، وتحكم مطلق في كل التفاصيل.</p>
       <div id="notice" class="notice" role="alert">تعذّر تسجيل الدخول. حاول مرة أخرى.</div>
       <div class="hero-btns">
-        <a class="hbtn solid" id="enterBtn" href="/login"><span class="bt">⚡ <span id="enterT">تفعيل النظام</span></span></a>
+        <a class="hbtn solid" id="enterBtn" href="/login"><i class="boltbadge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg></i><span class="bt"><span id="enterT">تفعيل النظام</span></span></a>
         <a class="hbtn line" href="#explore">↓ استكشاف</a>
       </div>
     </div>
