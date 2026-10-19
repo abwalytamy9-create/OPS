@@ -5293,6 +5293,7 @@ async function tvSendPanel(guild, cfg) {
     dirty = true;
   } catch (e) { console.error('[tempvoice] panel:', JSON.stringify(e.rawError || e.message)); throw e; }
 }app.get('/api/guild/:id/appemojis', auth, wrap(async (req, res) => {
+  
   const info = await ctxGuild(req, res); if (!info) return;
   let items = [];
   try { const j = await client.rest.get(`/applications/${client.user.id}/emojis`); items = j.items || []; } catch (_) {}
@@ -5300,7 +5301,24 @@ async function tvSendPanel(guild, cfg) {
   const hubList = hub ? [...hub.emojis.cache.values()].map((e) => ({ id: e.id, name: e.name, animated: !!e.animated, tag: `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>` })) : [];
   res.json({ list: items.map((e) => ({ id: e.id, name: e.name, animated: !!e.animated, tag: `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>` })), hub: hubList });
 }));
+// قائمة السيرفرات اللي فيها البوت (للمالك فقط)
+app.get('/api/emoji-servers', auth, (req, res) => {
+  if (!OWNER_IDS.includes(req.session.user.id)) return res.status(403).json({ error: 'forbidden' });
+  if (!client) return res.json({ list: [] });
+  res.json({ list: [...client.guilds.cache.values()].map((g) => ({ id: g.id, name: g.name, icon: g.icon })) });
+});
 
+// إيموجيات سيرفر معين (للمالك فقط)
+app.get('/api/emoji-servers/:sid', auth, (req, res) => {
+  if (!OWNER_IDS.includes(req.session.user.id)) return res.status(403).json({ error: 'forbidden' });
+  const g = client && client.guilds.cache.get(req.params.sid);
+  if (!g) return res.status(404).json({ error: 'not_found' });
+  res.json({
+    list: [...g.emojis.cache.values()].filter((e) => e.available !== false).map((e) => ({
+      id: e.id, name: e.name, animated: !!e.animated, tag: `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>`,
+    })),
+  });
+});
 app.post('/api/guild/:id/tempvoice/panel', auth, wrap(async (req, res) => {
   const info = await ctxGuild(req, res, { manage: true }); if (!info) return;
   const cg = client.guilds.cache.get(info.id);
@@ -11833,16 +11851,49 @@ loadCoin();
         const url = (id, a) => `https://cdn.discordapp.com/emojis/${id}.${a ? 'gif' : 'png'}?size=48`;
         const view = (v) => { const m = /^<(a?):(\w+):(\d+)>$/.exec(v || ''); return m ? el('img', { src: url(m[3], m[1]), alt: m[2], width: 28, height: 28 }) : document.createTextNode(v || '❔'); };
         let lists = null;
-        const getLists = async () => {
-          if (lists) return lists;
-          const [s, a] = await Promise.all([
-            api(`/api/guild/${gid}/emojis`).catch(() => ({ list: [] })),
-            api(`/api/guild/${gid}/appemojis`).catch(() => ({ list: [] })),
-          ]);
-          return (lists = { server: a.hub || [], app: a.list });
-        };
+let servers = null;
+let curServer = null;           // السيرفر المختار
+const srvCache = {};            // كاش إيموجيات كل سيرفر
+
+const getServers = async () =>
+  servers || (servers = (await api('/api/emoji-servers').catch(() => ({ list: [] }))).list);
+
+const getServerEmojis = async (sid) => {
+  if (!srvCache[sid]) srvCache[sid] = (await api(`/api/emoji-servers/${sid}`).catch(() => ({ list: [] }))).list;
+  return srvCache[sid];
+};
+
+const getLists = async () => {
+  if (!lists) {
+    const a = await api(`/api/guild/${gid}/appemojis`).catch(() => ({ list: [] }));
+    lists = { app: a.list };
+  }
+  return lists;
+};
         const grid = (list, choose) => el('div', { class: 'emogrid' }, list.map((x) =>
           el('button', { type: 'button', class: 'emoit', title: x.name, onclick: () => choose(x.tag) }, el('img', { src: url(x.id, x.animated), alt: x.name, width: 28, height: 28 }))));
+        const serverBlock = (choose) => {
+  const box = el('div', { class: 'stack tight' });
+  const out = el('div', {});
+  const showServer = async (sid) => {
+    curServer = sid;
+    if (!sid) { put(out, el('small', { class: 'muted' }, 'اختر سيرفر لعرض إيموجياته')); return; }
+    put(out, el('small', { class: 'muted' }, 'جاري التحميل...'));
+    const list = await getServerEmojis(sid);
+    if (curServer !== sid) return;
+    put(out, list.length ? grid(list, choose) : el('small', { class: 'muted' }, 'هذا السيرفر ما فيه إيموجيات'));
+  };
+  const sel = el('select', { class: 'inp', 'aria-label': 'اختر السيرفر' }, el('option', { value: '' }, 'جاري التحميل...'));
+  sel.addEventListener('change', () => showServer(sel.value));
+  put(box, sel, out);
+  getServers().then((list) => {
+    put(sel,
+      el('option', { value: '' }, 'اختر السيرفر...'),
+      list.map((s) => el('option', { value: s.id, selected: s.id === curServer }, s.name)));
+    showServer(curServer);
+  });
+  return box;
+};
         const draw = () => put(rows, d.buttons.map((b) => {
           const wrap = el('div', { class: 'emowrap' });
           wrap.append(el('button', {
@@ -11863,7 +11914,7 @@ loadCoin();
               const L = await getLists();
               put(body,
                 el('div', { class: 'emotitle' }, 'إيموجيات سيرفر OPS (تعمل بكل السيرفرات)'),
-                L.server.length ? grid(L.server, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
+                serverBlock(choose),
                 el('div', { class: 'emotitle' }, 'إيموجيات البوت (تعمل بكل السيرفرات)'),
                 L.app.length ? grid(L.app, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
                 el('div', { class: 'emotitle' }, 'إيموجيات عادية'),
