@@ -5301,24 +5301,7 @@ async function tvSendPanel(guild, cfg) {
   const hubList = hub ? [...hub.emojis.cache.values()].map((e) => ({ id: e.id, name: e.name, animated: !!e.animated, tag: `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>` })) : [];
   res.json({ list: items.map((e) => ({ id: e.id, name: e.name, animated: !!e.animated, tag: `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>` })), hub: hubList });
 }));
-// قائمة السيرفرات اللي فيها البوت (للمالك فقط)
-app.get('/api/emoji-servers', auth, (req, res) => {
-  if (!OWNER_IDS.includes(req.session.user.id)) return res.status(403).json({ error: 'forbidden' });
-  if (!client) return res.json({ list: [] });
-  res.json({ list: [...client.guilds.cache.values()].map((g) => ({ id: g.id, name: g.name, icon: g.icon })) });
-});
 
-// إيموجيات سيرفر معين (للمالك فقط)
-app.get('/api/emoji-servers/:sid', auth, (req, res) => {
-  if (!OWNER_IDS.includes(req.session.user.id)) return res.status(403).json({ error: 'forbidden' });
-  const g = client && client.guilds.cache.get(req.params.sid);
-  if (!g) return res.status(404).json({ error: 'not_found' });
-  res.json({
-    list: [...g.emojis.cache.values()].filter((e) => e.available !== false).map((e) => ({
-      id: e.id, name: e.name, animated: !!e.animated, tag: `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>`,
-    })),
-  });
-});
 app.post('/api/guild/:id/tempvoice/panel', auth, wrap(async (req, res) => {
   const info = await ctxGuild(req, res, { manage: true }); if (!info) return;
   const cg = client.guilds.cache.get(info.id);
@@ -11872,28 +11855,7 @@ const getLists = async () => {
 };
         const grid = (list, choose) => el('div', { class: 'emogrid' }, list.map((x) =>
           el('button', { type: 'button', class: 'emoit', title: x.name, onclick: () => choose(x.tag) }, el('img', { src: url(x.id, x.animated), alt: x.name, width: 28, height: 28 }))));
-        const serverBlock = (choose) => {
-  const box = el('div', { class: 'stack tight' });
-  const out = el('div', {});
-  const showServer = async (sid) => {
-    curServer = sid;
-    if (!sid) { put(out, el('small', { class: 'muted' }, 'اختر سيرفر لعرض إيموجياته')); return; }
-    put(out, el('small', { class: 'muted' }, 'جاري التحميل...'));
-    const list = await getServerEmojis(sid);
-    if (curServer !== sid) return;
-    put(out, list.length ? grid(list, choose) : el('small', { class: 'muted' }, 'هذا السيرفر ما فيه إيموجيات'));
-  };
-  const sel = el('select', { class: 'inp', 'aria-label': 'اختر السيرفر' }, el('option', { value: '' }, 'جاري التحميل...'));
-  sel.addEventListener('change', () => showServer(sel.value));
-  put(box, sel, out);
-  getServers().then((list) => {
-    put(sel,
-      el('option', { value: '' }, 'اختر السيرفر...'),
-      list.map((s) => el('option', { value: s.id, selected: s.id === curServer }, s.name)));
-    showServer(curServer);
-  });
-  return box;
-};
+        
         const draw = () => put(rows, d.buttons.map((b) => {
           const wrap = el('div', { class: 'emowrap' });
           wrap.append(el('button', {
@@ -11914,7 +11876,7 @@ const getLists = async () => {
               const L = await getLists();
               put(body,
                 el('div', { class: 'emotitle' }, 'إيموجيات سيرفر OPS (تعمل بكل السيرفرات)'),
-                serverBlock(choose),
+                L.server.length ? grid(L.server, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
                 el('div', { class: 'emotitle' }, 'إيموجيات البوت (تعمل بكل السيرفرات)'),
                 L.app.length ? grid(L.app, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
                 el('div', { class: 'emotitle' }, 'إيموجيات عادية'),
@@ -11956,7 +11918,7 @@ const getLists = async () => {
                 const L = await getLists();
                 put(body,
                   el('div', { class: 'emotitle' }, 'إيموجيات سيرفر OPS'),
-                  L.server.length ? grid(L.server, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
+                  serverBlock(choose),
                   el('div', { class: 'emotitle' }, 'إيموجيات البوت'),
                   L.app.length ? grid(L.app, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
                   el('div', { class: 'emotitle' }, 'إيموجيات عادية'),
