@@ -500,7 +500,7 @@ app.use(
   })
 );
 app.use(express.urlencoded({ extended: false }));
-app.use(express.json({ limit: '20mb' }));
+app.use(express.json({ limit: '100mb' }));
 // احفظ فوراً بعد أي تعديل من الداشبورد
 app.use('/api', (req, res, next) => {
   if (req.method !== 'GET') res.on('finish', () => { if (res.statusCode < 400) save(); });
