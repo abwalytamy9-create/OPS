@@ -7645,7 +7645,7 @@ async function onAutoProt(msg) {
 });
 
 app.listen(PORT, () => console.log(`OPS COIN site running on http://localhost:${PORT}`));
-app.listen(PORT, () => console.log(`OPS COIN site running on http://localhost:${PORT}`));
+
 async function onChannelSync(msg) {
   if (!msg.guildId || !msg.author || msg.author.bot || msg.webhookId) return;
   if (!client.options.intents.has(GatewayIntentBits.MessageContent)) return; // بدون الإنتنت ما بنشوف النص وبنحذف غلط
