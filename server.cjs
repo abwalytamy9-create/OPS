@@ -110,7 +110,7 @@ function save() {
     console.error('DB save error:', e.message);
   }
 }
-setInterval(save, 15000);
+setInterval(save, 2000);
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { save(); process.exit(0); });
 
 // مخازن إضافية: dbk = قراءة/إنشاء ، dbr = قراءة فقط
