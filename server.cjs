@@ -4068,7 +4068,7 @@ async function levelBg() {
   if (img) lvlBgImg = img;
   return img;
 }
-async function levelCard(m, rec, g) {
+async function levelCard_v1(m, rec, g) {
   const W = 860, H = 880;
   const FONT = 'Cairo, "Segoe UI", Tahoma, Arial, sans-serif';
   const { cv, c } = cardBase(W, H);
@@ -4186,6 +4186,128 @@ async function levelCardOld(m, rec, g) {
   c.fillStyle = '#fff'; c.beginPath(); c.arc(W / 2, ly, 42, 0, Math.PI * 2); c.fill();
   if (lg) c.drawImage(lg, lg.width * 0.12, lg.height * 0.10, lg.width * 0.76, lg.height * 0.56, W / 2 - 34, ly - 34, 68, 68);
   return cv.toBuffer('image/png');
+}// ===== الشكل الجديد: أزرق زجاجي (مستوى عمودي + بروفايل عريض) =====
+function glassBar(c, x, y, w, h, ratio) {
+  const tg = c.createLinearGradient(0, y, 0, y + h);
+  tg.addColorStop(0, '#26272d'); tg.addColorStop(1, '#0b0b0e');
+  c.fillStyle = tg; rr(c, x, y, w, h, h / 2); c.fill();
+  const fw = Math.max(h, w * Math.min(1, Math.max(0, ratio)));
+  const fg = c.createLinearGradient(0, y, 0, y + h);
+  fg.addColorStop(0, '#7fa6d9'); fg.addColorStop(0.5, '#4f82c0'); fg.addColorStop(1, '#3a67a3');
+  c.fillStyle = fg; rr(c, x, y, fw, h, h / 2); c.fill();
+  c.save(); rr(c, x, y, fw, h, h / 2); c.clip();
+  const gl = c.createLinearGradient(0, y, 0, y + h / 2);
+  gl.addColorStop(0, 'rgba(255,255,255,.35)'); gl.addColorStop(1, 'rgba(255,255,255,0)');
+  c.fillStyle = gl; c.fillRect(x, y, fw, h / 2); c.restore();
+  c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 2; rr(c, x + 1, y + 1, w - 2, h - 2, h / 2); c.stroke();
+}
+async function paintBg(c, W, H) {
+  const bg = await levelBg();
+  if (!bg) return;
+  c.save(); rr(c, 0, 0, W, H, 28); c.clip();
+  const s = Math.max(W / bg.width, H / bg.height);
+  c.drawImage(bg, (W - bg.width * s) / 2, (H - bg.height * s) / 2, bg.width * s, bg.height * s);
+  c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(0, 0, W, H);
+  c.restore();
+  c.strokeStyle = '#3f3f46'; c.lineWidth = 2; rr(c, 1, 1, W - 2, H - 2, 28); c.stroke();
+}
+
+// ---- بطاقة المستوى (العمودية) ----
+async function levelCard(m, rec, g) {
+  const W = 720, H = 748;
+  const FONT = 'Cairo, "Segoe UI", Tahoma, Arial, sans-serif';
+  const { cv, c } = cardBase(W, H);
+  await paintBg(c, W, H);
+
+  const av = await loadImg(m.displayAvatarURL({ size: 512, extension: 'png', forceStatic: true }));
+  c.save(); c.shadowColor = 'rgba(180,200,230,.45)'; c.shadowBlur = 40;
+  avatarCircle(c, av, W / 2, 190, 165, '#c3cddb');
+  c.restore();
+
+  const fancy = /[\u{1D400}-\u{1D7FF}\u{FF00}-\u{FFEF}]/u.test(m.displayName);
+  const name = (fancy ? m.user.username : m.displayName).slice(0, 22);
+  c.textBaseline = 'middle'; c.textAlign = 'center'; c.fillStyle = '#fff';
+  c.font = `bold 58px ${FONT}`;
+  c.fillText(name, W / 2, 400, W - 100);
+
+  const bx = 165, bw = 385, bh = 56;
+  const row = (y, xp, key, rankLabel, icon) => {
+    const x = xpInfo(xp);
+    glassBar(c, bx, y, bw, bh, x.cur / x.need);
+    const t = `${NF(x.cur)} / ${NF(x.need)}`;
+    c.direction = 'ltr'; c.textAlign = 'center'; c.font = `bold 28px ${FONT}`;
+    c.lineJoin = 'round'; c.lineWidth = 5; c.strokeStyle = 'rgba(0,0,0,.55)';
+    c.strokeText(t, bx + bw / 2, y + bh / 2);
+    c.fillStyle = '#fff'; c.fillText(t, bx + bw / 2, y + bh / 2);
+    c.textAlign = 'right'; c.font = `bold 28px ${FONT}`;
+    c.fillText('lvl.' + x.level, 140, y + bh / 2);
+    icon(c, bx + bw + 50, y + bh / 2, 46);
+    c.font = `22px ${FONT}`; c.fillStyle = '#d4d4d8'; c.direction = 'rtl';
+    c.textAlign = 'left'; c.fillText('إجمالي النقاط: ' + NF(xp), bx, y + bh + 27);
+    c.textAlign = 'right'; c.fillText(`${rankLabel} #${rankOf(g, m.id, key)}`, bx + bw, y + bh + 27);
+    c.direction = 'ltr';
+  };
+  row(432, rec.vxp || 0, 'vxp', 'ترتيبك الصوتي:', lvIconMic);
+  row(540, rec.xp || 0, 'xp', 'ترتيبك الكتابي:', lvIconChat);
+
+  const lg = await levelLogo();
+  const lx = W / 2, ly = 692;
+  c.fillStyle = '#fff'; c.beginPath(); c.arc(lx, ly, 40, 0, Math.PI * 2); c.fill();
+  if (lg) c.drawImage(lg, lg.width * 0.12, lg.height * 0.10, lg.width * 0.76, lg.height * 0.56, lx - 31, ly - 31, 62, 62);
+  return cv.toBuffer('image/png');
+}
+
+// ---- بطاقة البروفايل (العريضة) ببيانات حقيقية ----
+async function pfStatsCard(m, u) {
+  const gid = m.guild.id;
+  const FONT = 'Cairo, "Segoe UI", Tahoma, Arial, sans-serif';
+  const rec = (db.guilds[gid] || { members: {} }).members[m.id] || {};
+  const total = rec.xp || 0;          // كتابي + صوتي
+  const x = xpInfo(total);
+  const bal = Number((dbr('economy', gid)[m.id] || {}).balance) || 0;
+  const cur = String(ecoCfg(gid).currencyName || 'OPS').slice(0, 8);
+
+  const W = 900, H = 507;
+  const { cv, c } = cardBase(W, H);
+  await paintBg(c, W, H);
+
+  // نقاط الزينة
+  c.fillStyle = '#fff';
+  for (const [dx, dy] of [[55, 48], [75, 48], [95, 48], [835, 462], [855, 462], [875, 462]]) { c.beginPath(); c.arc(dx, dy, 5, 0, Math.PI * 2); c.fill(); }
+
+  const av = await loadImg(m.displayAvatarURL({ size: 512, extension: 'png', forceStatic: true }));
+  c.save(); c.shadowColor = 'rgba(180,200,230,.45)'; c.shadowBlur = 36;
+  avatarCircle(c, av, 190, 252, 148, '#c3cddb');
+  c.restore();
+
+  const px = 452, pw = 338, ph = 50;
+  c.textBaseline = 'middle';
+  const pill = (y, text) => {
+    const g = c.createLinearGradient(0, y, 0, y + ph);
+    g.addColorStop(0, '#f4f6fa'); g.addColorStop(1, '#a9b0bc');
+    c.save(); c.shadowColor = 'rgba(255,255,255,.25)'; c.shadowBlur = 18;
+    c.fillStyle = g; rr(c, px, y, pw, ph, ph / 2); c.fill(); c.restore();
+    c.fillStyle = '#111'; c.font = `bold 30px ${FONT}`; c.textAlign = 'center';
+    c.fillText(String(text), px + pw / 2, y + ph / 2 + 1, pw - 40);
+  };
+  const label = (y, text) => { c.fillStyle = '#fff'; c.font = `bold 26px ${FONT}`; c.textAlign = 'center'; c.fillText(text, 397, y + ph / 2); };
+
+  pill(128, m.displayName.slice(0, 22));
+  pill(220, ecoFmt(bal)); label(220, cur);
+
+  glassBar(c, px, 312, pw, ph, x.cur / x.need);
+  const t = `${NF(x.cur)} / ${NF(x.need)}`;
+  c.textAlign = 'center'; c.font = `bold 26px ${FONT}`; c.lineJoin = 'round'; c.lineWidth = 5;
+  c.strokeStyle = 'rgba(0,0,0,.55)'; c.strokeText(t, px + pw / 2, 312 + ph / 2);
+  c.fillStyle = '#fff'; c.fillText(t, px + pw / 2, 312 + ph / 2);
+  label(312, 'lvl.' + x.level);
+  lvIconMic(c, 820, 337, 40);
+  lvIconChat(c, 867, 337, 40);
+
+  c.font = `22px ${FONT}`; c.fillStyle = '#d4d4d8'; c.direction = 'rtl'; c.textAlign = 'center';
+  c.fillText('إجمالي النقاط: ' + NF(total), px + pw / 2, 392);
+  c.direction = 'ltr';
+  return cv.toBuffer('image/png');
 }
 HANDLERS.level = async function (msg, mod, a) {
   need(canvasLib, 'لازم تثبّت المكتبة: npm i @napi-rs/canvas');
@@ -4243,7 +4365,7 @@ const pfRows = (inv, tid, view, hasBanner) => [{ type: 1, components: [
   { type: 2, style: 2, custom_id: `pf:a:${inv}:${tid}:${view}`, label: 'الأفتار' },
 ] }];
 
-async function pfStatsCard(m, u) {
+async function pfStatsCard_v1(m, u) {
   const gid = m.guild.id;
   const rec = (db.guilds[gid] || { members: {} }).members[m.id] || {};
   const x = xpInfo(rec.xp || 0);
