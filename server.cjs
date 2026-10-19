@@ -99,12 +99,17 @@ try {
   }
 }
 let dirty = false;
+try {
+  const st = fs.statSync(DB_PATH);
+  console.log('[db] loaded', DB_PATH, st.size, 'bytes, modified', st.mtime.toISOString());
+} catch (e) { console.log('[db] no file at', DB_PATH); }
 function save() {
   if (!dirty) return;
   dirty = false;
   try {
     fs.writeFileSync(DB_PATH + '.tmp', JSON.stringify(db));
     fs.renameSync(DB_PATH + '.tmp', DB_PATH);
+    console.log('[db] saved', fs.statSync(DB_PATH).size, 'bytes');
   } catch (e) {
     dirty = true;
     console.error('DB save error:', e.message);
@@ -8802,18 +8807,17 @@ loadCoin();
       };
 
       const saveBtn = el('button', { class: 'btn primary wide', type: 'button', disabled: locked, onclick: () => save() }, 'حفظ وتطبيق التغييرات مباشرة');
-      async function save() {
-        const body = {};
-        if (nickIn.value.trim() !== (d.nick || '')) body.nick = nickIn.value.trim();
-        if (pend.avatar !== undefined) body.avatar = pend.avatar;
-        if (pend.banner !== undefined) body.banner = pend.banner;
-        saveBtn.disabled = true;
-        try {
-          await apiSend('POST', `/api/guild/${gid}/botprofile`, body);
-          fl.show('تم حفظ وتطبيق التغييرات ✅');
-          await load();
-        } catch (e) { fl.show(errText(e), false); saveBtn.disabled = false; }
-      }
+      function save() {
+  if (!dirty) return;
+  dirty = false;
+  try {
+    fs.writeFileSync(DB_PATH + '.tmp', JSON.stringify(db));
+    fs.renameSync(DB_PATH + '.tmp', DB_PATH);
+  } catch (e) {
+    dirty = true;
+    console.error('DB save error:', e.message);
+  }
+}
       async function reset() {
         if (!confirm('استعادة المظهر الافتراضي للبوت في هذا السيرفر؟')) return;
         try { await apiSend('POST', `/api/guild/${gid}/botprofile`, { reset: true }); fl.show('تمت استعادة المظهر الافتراضي'); await load(); }
