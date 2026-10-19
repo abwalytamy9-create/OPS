@@ -2658,6 +2658,21 @@ const CMD_EMO_ITEMS = [
   ['vipgift', 'مكافأة العضوية المميزة (أعلى الرسالة)', '🎁'],
     ['clearwarn', 'تأكيد المسح الشامل', '⚠️'],
       ['clearlog', 'لوق: حذف رسائل جماعي', '🧹'],
+        ['inf_mute', 'سجلات: الاسكات', '⏰'],
+  ['inf_vmute', 'سجلات: الميوت', '🔇'],
+  ['inf_timeout', 'سجلات: التايم اوت', '⏳'],
+  ['inf_prison', 'سجلات: السجن', '⛓️'],
+  ['inf_ban', 'سجلات: الحظر', '🔨'],
+  ['inf_kick', 'سجلات: الطرد', '👢'],
+  ['inf_warn', 'سجلات: التحذيرات', '⚠️'],
+  ['hide', 'إخفاء روم', '🙈'],
+  ['unhide', 'إظهار روم', '👀'],
+  ['slow', 'السلو مود', '⏱️'],
+  ['bot', 'البوتات / المساعدة', '🤖'],
+  ['advice', 'النصائح', '💡'],
+  ['stats', 'الإحصائيات', '📊'],
+  ['blocked', 'قائمة البلوك', '⛔'],
+  ['doc', 'معلومات العقوبة', '📄'],
 ];
 function cmdEmojis() {
   const src = db.cmdEmojis && typeof db.cmdEmojis === 'object' ? db.cmdEmojis : {};
@@ -2667,7 +2682,7 @@ function cmdEmojis() {
 }
 function applyEmo(text) {
   const cur = cmdEmojis();
-  const map = new Map(CMD_EMO_ITEMS.filter(([k]) => k !== 'gift' && k !== 'vipgift' && k !== 'clearwarn' && k !== 'clearlog').map(([k, , def]) => [def, cur[k]]));
+  const map = new Map(CMD_EMO_ITEMS.filter(([k]) => k !== 'gift' && k !== 'vipgift' && k !== 'clearwarn' && k !== 'clearlog' && !k.startsWith('inf_')).map(([k, , def]) => [def, cur[k]]));
   const re = new RegExp([...map.keys()].sort((a, b) => b.length - a.length)
     .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g');
   return String(text).replace(re, (m) => map.get(m));
@@ -2679,7 +2694,13 @@ const say = (msg, text) => client.rest.post(Routes.channelMessages(msg.channelId
   components: v2Comps(text),
 } }).catch(() => null);
 const EMB = () => new EmbedBuilder().setColor(0xfbbf24);
-const card = (msg, e) => msg.reply({ embeds: [e], allowedMentions: { parse: [], repliedUser: false } }).catch(() => {});
+const card = (msg, e) => {
+  try {
+    if (e.data && e.data.title) e.setTitle(applyEmo(e.data.title));
+    if (e.data && e.data.description) e.setDescription(applyEmo(e.data.description));
+  } catch (_) {}
+  return msg.reply({ embeds: [e], allowedMentions: { parse: [], repliedUser: false } }).catch(() => {});
+};
 const ts = (ms, f = 'F') => `<t:${Math.floor(ms / 1000)}:${f}>`;
 const chunkList = (lines, max = 3800) => {
   let out = '', n = 0;
@@ -3182,14 +3203,15 @@ const INF_CATS = [
 ];
 const INF_TIMED = ['mute', 'timeout', 'prison', 'ban'];
 const infBtn = (id, label, emoji, style = 2, disabled = false) =>
-  Object.assign({ type: 2, style, custom_id: id, label, disabled }, emoji ? { emoji: { name: emoji } } : {});
+  Object.assign({ type: 2, style, custom_id: id, label, disabled }, emoji ? { emoji: tkEmoji(emoji) } : {});
 
 function infBody(guild, modId, uid, cat, page) {
   const list = arr(infOf(guild.id)[uid]);
   const sep = { type: 14, divider: true, spacing: 1 };
   if (!cat) {
     const rows = [];
-    INF_CATS.forEach(([k, t, e, types], i) => {
+    INF_CATS.forEach(([k, t, , types], i) => {
+      const e = cmdEmojis()['inf_' + k];
       if (i % 5 === 0) rows.push({ type: 1, components: [] });
       rows[rows.length - 1].components.push(infBtn(`inf:cat:${modId}:${uid}:${k}:1`, `${t} (${list.filter((x) => types.includes(x.type)).length})`, e));
     });
@@ -5235,7 +5257,7 @@ function tvFind(guildId, userId, member) {
 
 // لوحة وحدة ثابتة (ما فيها أي ايدي غرفة)
 function tvPanelBody(cfg) {
-  const TV_IMG = 'https://cdn.discordapp.com/attachments/1560739123625590844/1561146531996893284/Screenshot_2026-10-18_013545.png?ex=6ad54a81&is=6ad3f901&hm=419de6a6354e29b5fbd1ad09bf3872840a146fecf151a763ae368f4175f058d9&';
+  const TV_IMG = 'https://cdn.phototourl.com/member/2026-10-19-733a89c1-d390-4805-9297-a9f1f29b138e.png';
   const emo = (v) => { const m = /^<(a?):(\w{1,32}):(\d{15,25})>$/.exec(v || ''); return m ? { id: m[3], name: m[2], animated: !!m[1] } : { name: v }; };
   const btns = TV_BTNS.map(([act]) => ({ type: 2, style: 2, custom_id: `tv:${act}:0`, emoji: emo(cfg.emojis[act]) }));
   const vars = { user: 'صاحب الغرفة', userName: 'صاحب الغرفة', channel: 'غرفتك' };
