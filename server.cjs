@@ -4060,11 +4060,28 @@ function lvIconChat(c, cx, cy, s) {
   rr(c, cx - s * 0.5, cy - s * 0.42, s, s * 0.72, s * 0.3); c.stroke();
   c.beginPath(); c.moveTo(cx - s * 0.18, cy + s * 0.3); c.lineTo(cx - s * 0.3, cy + s * 0.52); c.lineTo(cx + s * 0.04, cy + s * 0.3); c.closePath(); c.fill();
   for (const dx of [-0.2, 0, 0.2]) { c.beginPath(); c.arc(cx + s * dx, cy - s * 0.06, 4, 0, Math.PI * 2); c.fill(); }
+}let lvlBgImg = null;
+async function levelBg() {
+  if (lvlBgImg) return lvlBgImg;
+  const local = path.join(__dirname, 'level-bg.png');
+  const img = fs.existsSync(local) ? await loadImg(local) : null;
+  if (img) lvlBgImg = img;
+  return img;
 }
 async function levelCard(m, rec, g) {
   const W = 860, H = 880;
   const FONT = 'Cairo, "Segoe UI", Tahoma, Arial, sans-serif';
   const { cv, c } = cardBase(W, H);
+  const bg = await levelBg();
+if (bg) {
+  c.save();
+  rr(c, 0, 0, W, H, 28); c.clip();
+  const s = Math.max(W / bg.width, H / bg.height);
+  c.drawImage(bg, (W - bg.width * s) / 2, (H - bg.height * s) / 2, bg.width * s, bg.height * s);
+  c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(0, 0, W, H);
+  c.restore();
+  c.strokeStyle = '#3f3f46'; c.lineWidth = 2; rr(c, 1, 1, W - 2, H - 2, 28); c.stroke();
+}
   const av = await loadImg(m.displayAvatarURL({ size: 512, extension: 'png', forceStatic: true }));
   avatarCircle(c, av, W / 2, 190, 140);
 
