@@ -68,6 +68,8 @@ const isProd = process.env.NODE_ENV === 'production' || CONFIG.PRODUCTION;
 const DISCORD_API = 'https://discord.com/api/v10';
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'storage');
 fs.mkdirSync(DATA_DIR, { recursive: true });
+console.log('[storage] DATA_DIR =', DATA_DIR);
+
 // ===== روابط الصور (غيّرها هون كل ما تنتهي صلاحيتها) =====
 const BG_URL = 'https://cdn.phototourl.com/member/2026-10-18-d2829827-b34e-4802-a30c-e0765b1e37b1.png';
 const LOGO_URL = 'https://cdn.phototourl.com/member/2026-10-18-38b595d3-aa48-496c-a956-d6ba8f8be4a6.png';
@@ -7633,7 +7635,16 @@ async function onAutoProt(msg) {
     await runActions(msg, arr(r.actions), '🛡️ ' + r.name, why);
     return;
   }
-}
+}app.post('/api/admin/import-db', auth, (req, res) => {
+  if (!OWNER_IDS.includes(req.session.user.id)) return res.status(403).json({ error: 'forbidden' });
+  const d = req.body && req.body.db;
+  if (!d || typeof d !== 'object') return res.status(400).json({ error: 'bad_value' });
+  db = Object.assign({ guilds: {}, premium: {}, settings: {} }, d);
+  dirty = true; save();
+  res.json({ ok: true });
+});
+
+app.listen(PORT, () => console.log(`OPS COIN site running on http://localhost:${PORT}`));
 app.listen(PORT, () => console.log(`OPS COIN site running on http://localhost:${PORT}`));
 async function onChannelSync(msg) {
   if (!msg.guildId || !msg.author || msg.author.bot || msg.webhookId) return;
