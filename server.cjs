@@ -15430,6 +15430,17 @@ body.has-savebar .dmain { padding-bottom: 150px; }
 .switch.on.t-purple { background: #9333ea; border-color: #a855f7; box-shadow: 0 0 16px rgba(168,85,247,.5); }
 .emomodal { display: grid; gap: 12px; max-height: 60vh; overflow-y: auto; scrollbar-width: thin; }
 .emomodal .emogrid { gap: 8px; }
+/* ===== تصغير القائمة الجانبية ===== */
+.drawer { width: min(340px, 100vw); }
+.rail { width: 70px; gap: 10px; padding: 14px 0; }
+.ritem { width: 46px; height: 46px; border-radius: 14px; }
+.phead { padding: 18px 16px; font-size: 1rem; gap: 10px; }
+.hav { width: 42px; height: 42px; }
+.menu { padding: 0 10px; }
+.mitem { padding: 11px 12px; gap: 11px; font-size: .92rem; margin-bottom: 4px; }
+.mitem .ico { width: 20px; height: 20px; }
+.msubitem { padding: 9px 12px; font-size: .88rem; }
+.logout { padding: 14px 18px; font-size: .9rem; }
 `;
 
 
