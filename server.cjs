@@ -335,6 +335,7 @@ function startBot(withMembers = true) {
   client.on(Events.MessageCreate, onCommand);
     client.on(Events.MessageCreate, onEconomy);
   client.on(Events.InteractionCreate, onEcoInteraction);
+    client.on(Events.InteractionCreate, onBotsInteraction);
     client.on(Events.InteractionCreate, onDetlogInteraction);
   client.on(Events.MessageCreate, onPrivateGuard);
     client.on(Events.InteractionCreate, onStatsInteraction);
@@ -2705,6 +2706,8 @@ const CMD_EMO_ITEMS = [
   ['stats', 'الإحصائيات', '📊'],
   ['blocked', 'قائمة البلوك', '⛔'],
   ['doc', 'معلومات العقوبة', '📄'],
+    ['pg_prev', 'بوتات: زر الصفحة السابقة', '◀️'],
+  ['pg_next', 'بوتات: زر الصفحة التالية', '▶️'],
 ];
 function cmdEmojis() {
   const src = db.cmdEmojis && typeof db.cmdEmojis === 'object' ? db.cmdEmojis : {};
@@ -3970,45 +3973,57 @@ HANDLERS.advice = async function (msg) {
     .setFooter({ text: 'حافظ على مجتمعك آمنا' }).setTimestamp());
 };
 
+// كاش لقائمة البوتات (عشان ما نعمل fetch كل مرة ونتفادى الـ rate limit)
+const botsCache = new Map();
+async function guildBots(guild) {
+  const c = botsCache.get(guild.id);
+  if (c && Date.now() - c.t < 120000) return c.list;
+  let members = guild.members.cache;
+  if (members.size < guild.memberCount) {
+    try { members = await guild.members.fetch(); } catch (_) { /* rate limited: نكمل بالكاش */ }
+  }
+  const list = [...members.filter((m) => m.user.bot).values()];
+  botsCache.set(guild.id, { t: Date.now(), list });
+  return list;
+}
+
+const BOTS_PER = 5;
+async function botsBody(guild, userId, page) {
+  const bots = await guildBots(guild);
+  const pages = Math.max(1, Math.ceil(bots.length / BOTS_PER));
+  page = Math.min(pages, Math.max(1, page || 1));
+  const lines = bots.slice((page - 1) * BOTS_PER, page * BOTS_PER).map((m, i) =>
+    `**${(page - 1) * BOTS_PER + i + 1}.** <@${m.id}>\n**معرف البوت :** \`${m.id}\``);
+  const e = new EmbedBuilder().setColor(0xffffff).setTitle('بوتات السيرفر')
+    .setThumbnail(guild.iconURL({ size: 256 }))
+    .setDescription(`**عدد البوتات :** \`${bots.length}\` (الصفحة ${page}/${pages})\n\n` + (lines.join('\n\n') || 'لا يوجد بوتات.'));
+  const EM = cmdEmojis();
+  const btn = (act, target, key, label, disabled) => ({
+    type: 2, style: 2, custom_id: `bots:${act}:${userId}:${target}`, disabled,
+    ...(EM[key] ? { emoji: tkEmoji(EM[key]) } : { label }),
+  });
+  return {
+    embeds: [e],
+    components: [{ type: 1, components: [
+      btn('p', page - 1, 'pg_prev', 'السابقة', page <= 1),
+      btn('n', page + 1, 'pg_next', 'التالية', page >= pages),
+    ] }],
+    allowedMentions: { parse: [], repliedUser: false },
+  };
+}
 HANDLERS.bots = async function (msg, mod, a) {
-  const all = await msg.guild.members.fetch();
-  const bots = [...all.filter((m) => m.user.bot).values()];
-  const per = 5, pages = Math.max(1, Math.ceil(bots.length / per));
-  const page = Math.min(pages, Math.max(1, parseInt(a[0], 10) || 1));
-  const lines = bots.slice((page - 1) * per, page * per).map((m, i) =>
-    `**${(page - 1) * per + i + 1}.** <@${m.id}>\n**معرف البوت :** \`${m.id}\``);
-  await card(msg, new EmbedBuilder().setColor(0xffffff).setTitle('بوتات السيرفر')
-    .setThumbnail(msg.guild.iconURL({ size: 256 }))
-    .setDescription(`**عدد البوتات :** \`${bots.length}\` (الصفحة ${page}/${pages})\n\n` + (lines.join('\n\n') || 'لا يوجد بوتات.')));
+  await msg.reply(await botsBody(msg.guild, msg.author.id, parseInt(a[0], 10) || 1));
 };
-HANDLERS.setlog = async function (msg, mod, a) {
-  const g = msg.guild, s = S(g.id), V = PermissionFlagsBits;
-  need(!(s.logmade && g.channels.cache.has(s.logmade.category)), 'قنوات اللوق موجودة مسبقا. استخدم detlog! لحذفها وإعادة الإعدادات أولا.');
-  const keys = Object.keys(LOGT).filter((k) => logCfg(g.id, k).enabled);
-  need(keys.length, 'ما في لوقات مفعلة بالداشبورد. فعّل اللوقات اللي بدك ياها أول.');
-  const extra = roleFrom(msg, a);   // اختياري: setlog! @رتبة  (الرتبة اللي بتشوف اللوقات)
-  const ow = [
-    { id: g.id, deny: [V.ViewChannel] },
-    { id: client.user.id, allow: [V.ViewChannel, V.SendMessages, V.EmbedLinks] },
-  ];
-  for (const r of g.roles.cache.values()) {
-    if (r.id !== g.id && !r.managed && (r.permissions.has(V.Administrator) || r.permissions.has(V.ManageGuild))) ow.push({ id: r.id, allow: [V.ViewChannel] });
-  }
-  if (extra && !ow.some((o) => o.id === extra.id)) ow.push({ id: extra.id, allow: [V.ViewChannel] });
-  const wait = await card(msg, EMB().setDescription('جاري البدء في إنشاء اللوقات وإعداد النظام...'));
-  const cat = await g.channels.create({ name: 'OPS LOGS', type: ChannelType.GuildCategory, permissionOverwrites: ow.slice(0, 100), reason: reasonOf(mod, 'setlog') });
-  const made = { category: cat.id, items: {} };
-  s.logmade = made; s.logcfg = s.logcfg || {}; dirty = true;   // نحفظ بدري عشان detlog ينظف لو وقف النص
-  for (const k of keys) {
-    const name = ('لوق-' + LOGT[k].title).replace(/[\s\/\\]+/g, '-').slice(0, 100);
-    const c = await g.channels.create({ name, type: ChannelType.GuildText, parent: cat.id, permissionOverwrites: ow.slice(0, 100), reason: reasonOf(mod, 'setlog') });
-    made.items[k] = { id: c.id, prev: rawLog(g.id, k).channel || null };
-    s.logcfg[k] = { ...rawLog(g.id, k), channel: c.id };
-    dirty = true;
-  }
-  const done = EMB().setDescription(`تم إنشاء ${keys.length} روم لوق وربطها بالإعدادات.`);
-  if (wait) wait.edit({ embeds: [done] }).catch(() => {}); else say(msg, 'تم إنشاء رومات اللوق.');
-};
+
+async function onBotsInteraction(i) {
+  try {
+    const cid = String(i.customId || '');
+    if (!i.guildId || !i.isButton() || !cid.startsWith('bots:')) return;
+    const [, , owner, page] = cid.split(':');
+    if (i.user.id !== owner) return void (await i.reply({ content: '⚠️ هذي الأزرار لصاحب الأمر.', flags: 64 }));
+    await i.update(await botsBody(i.guild, owner, parseInt(page, 10) || 1));
+  } catch (e) { console.error('bots:', e.message); }
+}
 
 HANDLERS.detlog = async function (msg, mod) {
   need(S(msg.guildId).logmade, 'ما في قنوات لوق منشأة بالبوت.');
