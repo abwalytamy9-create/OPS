@@ -1123,7 +1123,8 @@ const rawLog = (gid, key) => (((db.settings[gid] || {}).logcfg) || {})[key] || {
 function logCfg(gid, key) {
   const def = LOGT[key];
   const c = rawLog(gid, key);
-  let enabled = c.enabled === undefined ? !def.premium : !!c.enabled;
+  const OPT_IN = ['images', 'links'];   // ما تشتغل إلا إذا فعّلها صاحب السيرفر من اللوق
+  let enabled = c.enabled === undefined ? (!def.premium && !OPT_IN.includes(key)) : !!c.enabled;
   if (def.premium && !isPremium(gid)) enabled = false;
   const fb = (((db.settings[gid] || {}).logs) || {}).ch;
   return {
@@ -1416,7 +1417,8 @@ function attachLogs(client) {
     if (!m.guild || !m.author || m.author.bot || m.webhookId) return;
     const imgs = [...(m.attachments ? m.attachments.values() : [])].filter((a) => /^(image|video)\//.test(a.contentType || ''));
     if (imgs.length) L(m.guild, 'images', '🖼️ إرسال صور', `${who(m.author)} في <#${m.channelId}>\n${imgs.slice(0, 5).map((a) => a.url).join('\n')}`);
-    const links = String(m.content || '').match(/https?:\/\/[^\s<>]+/gi);
+        const links = (String(m.content || '').match(/https?:\/\/[^\s<>]+/gi) || [])
+      .filter((u) => !/cdn\.discordapp\.com\/(emojis|stickers)\//i.test(u) && !/media\.discordapp\.net\/stickers\//i.test(u));
     if (links) L(m.guild, 'links', '🔗 نشر روابط', `${who(m.author)} في <#${m.channelId}>\n${cut(links.slice(0, 5).join('\n'), 1500)}`);
   });
 }
@@ -6873,6 +6875,13 @@ function apClean(list, gid) {
   const chans = new Set(textChannels(gid).map((c) => c.id));
   const str = (v, max) => { const t = v == null ? '' : String(v).trim(); if (t.length > max) throw codeErr('bad_text'); return t; };
   const chan = (v) => { if (!v) return null; if (!chans.has(String(v))) throw codeErr('bad_channel'); return String(v); };
+    const img = (v) => {
+    const t = str(v, 500);
+    if (!t) return '';
+    const m = TK_IMG_RE.exec(t);
+    if (!m || !fs.existsSync(path.join(TK_DIR, m[1]))) throw codeErr('bad_image');
+    return t;
+  };
   const role = (v) => {
     if (!v) return null;
     const r = cg && cg.roles.cache.get(String(v));
@@ -6902,7 +6911,7 @@ function apClean(list, gid) {
     return {
       id, name, enabled: f.enabled !== false,
       channel: chan(f.channel), logChannel: chan(f.logChannel),
-      description: str(f.description, 2000), cooldown: cd,
+      description: str(f.description, 2000), image: img(f.image), cooldown: cd,
       questions: qs.map((q) => {
         const text = str(q && q.text, 200);
         if (!text) throw codeErr('bad_questions');
@@ -6939,11 +6948,14 @@ app.post('/api/guild/:id/apply/:fid/send', auth, wrap(async (req, res) => {
   if (!f.logChannel) return res.status(400).json({ error: 'no_log' });
   if (!client.guilds.cache.get(info.id).channels.cache.has(f.channel)) return res.status(400).json({ error: 'bad_channel' });
   try {
-    const m = await client.rest.post(Routes.channelMessages(f.channel), { body: {
-      embeds: [{ color: 0xffffff, title: f.name, description: f.description || 'اضغط على الزر بالأسفل للتقديم.' }],
+    const emb = { color: 0xffffff, title: f.name, description: f.description || 'اضغط على الزر بالأسفل للتقديم.' };
+    const iu = tkImgUrl(f.image);
+    if (iu) emb.image = { url: iu };
+    const m = await tkPost(f.channel, {
+      embeds: [emb],
       components: [{ type: 1, components: [{ type: 2, style: 3, custom_id: `ap:s:${f.id}`, label: 'تقديم', emoji: { name: '📝' } }] }],
       allowed_mentions: { parse: [] },
-    } });
+    }, f.image);
     f.messageId = m.id; dirty = true;
     res.json({ ok: true, url: `https://discord.com/channels/${info.id}/${f.channel}/${m.id}` });
   } catch (e) { res.status(400).json({ error: 'discord_error', detail: discordMsg(e) }); }
@@ -13305,7 +13317,7 @@ const getLists = async () => {
     const dirty = () => JSON.stringify(forms) !== JSON.stringify(base);
     const fmtS = (s) => (s === 0 ? '0s' : s % 3600 === 0 ? `${s / 3600}h` : s % 60 === 0 ? `${s / 60}m` : `${Math.floor(s / 60)}m ${s % 60}s`);
     const blank = () => ({
-      id: '', name: 'نموذج جديد', enabled: true, channel: null, logChannel: null, description: '', cooldown: 300,
+      id: '', name: 'نموذج جديد', enabled: true, channel: null, logChannel: null, description: '', image: '', cooldown: 300,
       questions: [{ text: '', long: false, required: true }],
       accept: { dm: false, dmText: '', roleOn: false, role: null },
       reject: { dm: false, dmText: '', roleOn: false, role: null },
@@ -13372,7 +13384,31 @@ const getLists = async () => {
       nameIn.addEventListener('input', () => { f.name = nameIn.value; touch(); });
       const sw = toggle(f.enabled, (v) => { f.enabled = v; touch(); }, ro);
       sw.classList.add('green');
-
+      const imgPick = (obj) => {
+        const holder = el('div', { class: 'stack tight' });
+        const file = el('input', { type: 'file', accept: IMG_OK.join(','), class: 'hidden' });
+        const draw = () => {
+          const v = obj.image || '';
+          const src = v.startsWith('up:') ? `/api/guild/${gid}/tickets/img/${v.slice(3)}` : '';
+          put(holder, file,
+            src ? el('img', { class: 'upprev', src, alt: '' }) : el('small', { class: 'muted' }, 'لا توجد صورة'),
+            el('div', { class: 'btnrow' },
+              el('button', { class: 'btn ghost small', type: 'button', disabled: ro, onclick: () => file.click() }, icon('upload'), src ? 'تغيير الصورة' : 'رفع صورة'),
+              src ? el('button', { class: 'btn ghost small danger', type: 'button', disabled: ro, onclick: () => { obj.image = ''; draw(); touch(); } }, icon('trash'), 'إزالة') : null));
+        };
+        file.addEventListener('change', async () => {
+          const fl0 = file.files[0];
+          file.value = '';
+          if (!fl0) return;
+          try {
+            const image = await readImage(fl0, 5);
+            const j = await apiSend('POST', `/api/guild/${gid}/tickets/upload`, { image });
+            obj.image = j.ref; draw(); touch();
+          } catch (e) { fl.show(`${errText(e)} (الحد الأقصى 5MB)`, false); }
+        });
+        draw();
+        return holder;
+      };
       // الوصف
       const desc = el('textarea', { class: 'inp ta', rows: 4, maxlength: 2000, placeholder: 'أدخل وصف النموذج...', disabled: ro, 'aria-label': 'وصف النموذج' });
       desc.value = f.description;
@@ -13421,6 +13457,7 @@ const getLists = async () => {
             sw),
           el('label', { class: 'flabel' }, 'اسم النموذج'), nameIn),
         sec('وصف النموذج', 'تعليمات قصيرة أو مقدمة تظهر فوق أسئلة النموذج', 'doc', 'gold', desc),
+                sec('صورة لوحة التقديم', 'صورة تظهر مع بانل التقديم (اختياري)', 'image', 'gold', imgPick(f)),
         sec('فترة الانتظار', 'تعيين مدة فترة الانتظار بالثواني', 'clock', 'purple',
           el('div', { class: 'rowbar' }, el('span', { class: 'muted' }, 'المدة'), cdOut), rng),
         sec('السجلات', 'الروم الذي يجب نشر أحداث الطلبات فيه', 'hash', 'blue', chanSel('logChannel', 'اختر الروم...')),
