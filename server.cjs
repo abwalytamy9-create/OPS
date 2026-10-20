@@ -1417,8 +1417,7 @@ function attachLogs(client) {
     if (!m.guild || !m.author || m.author.bot || m.webhookId) return;
     const imgs = [...(m.attachments ? m.attachments.values() : [])].filter((a) => /^(image|video)\//.test(a.contentType || ''));
     if (imgs.length) L(m.guild, 'images', '🖼️ إرسال صور', `${who(m.author)} في <#${m.channelId}>\n${imgs.slice(0, 5).map((a) => a.url).join('\n')}`);
-        const links = (String(m.content || '').match(/https?:\/\/[^\s<>]+/gi) || [])
-      .filter((u) => !/cdn\.discordapp\.com\/(emojis|stickers)\//i.test(u) && !/media\.discordapp\.net\/stickers\//i.test(u));
+    const links = String(m.content || '').match(/https?:\/\/[^\s<>]+/gi);
     if (links) L(m.guild, 'links', '🔗 نشر روابط', `${who(m.author)} في <#${m.channelId}>\n${cut(links.slice(0, 5).join('\n'), 1500)}`);
   });
 }
