@@ -1210,16 +1210,36 @@ function permDiff(o, n) {
     const a = oc.get(id), b = nc.get(id), ref = b || a;
     const who = id === n.guild.id ? '@everyone' : ref.type === 0 ? `<@&${id}>` : `<@${id}>`;
     const st = (ow, bit) => (!ow ? 0 : (ow.allow.bitfield & bit) ? 1 : (ow.deny.bitfield & bit) ? -1 : 0);
+    const lines = [];
     for (const [name, bit] of Object.entries(PermissionFlagsBits)) {
       const s1 = st(a, bit), s2 = st(b, bit);
-      if (s1 !== s2) out.push(`↘️ ${who}\n${s2 === 1 ? '✅' : s2 === -1 ? '⛔' : '➖'} ${name}`);
+      if (s1 !== s2) lines.push(`${s2 === 1 ? '✅' : s2 === -1 ? '⛔' : '➖'} ${name.replace(/([a-z])([A-Z])/g, '$1 $2')}`);
     }
+    if (lines.length) out.push(`↘️ ${who}\n${lines.join('\n')}`);
   }
   return out.slice(0, 12);
 }
 const who = (u) => (u ? `<@${u.id}> (${u.username || u.tag || u.id})` : 'غير معروف');
 const cut = (s, n = 900) => { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n) + '…' : s; };
-
+async function LV2(guild, key, title, modId, user, ms, reason, footer) {
+  try {
+    const t = logTarget(guild, key);
+    if (!t) return;
+    const sep = { type: 14, divider: true, spacing: 1 };
+    const txt = (c) => ({ type: 10, content: c });
+    const comps = [
+      txt('## ' + title), sep,
+      txt('**المشرف المسؤول :** ' + (modId ? `<@${modId}>` : 'غير معروف')), sep,
+      txt([`**العضو :** <@${user.id}>`, `**معرف العضو :** \`${user.id}\``, ms === undefined ? null : `**المدة :** \`${durText(ms)}\``].filter(Boolean).join('\n')),
+    ];
+    if (reason !== undefined) comps.push(sep, txt('**السبب**\n```\n' + cut(String(reason).replace(/```/g, "'''"), 500) + '\n```'));
+    comps.push(txt(`-# ${footer} • <t:${Math.floor(Date.now() / 1000)}:f>`));
+    await client.rest.post(Routes.channelMessages(t.ch.id), { body: {
+      flags: 1 << 15, allowed_mentions: { parse: [] },
+      components: [{ type: 17, accent_color: parseInt(t.c.color.slice(1), 16), components: comps }],
+    } });
+  } catch (_) {}
+}
 // ---------- API: اللوقات ----------
 app.get('/api/guild/:id/logs', auth, wrap(async (req, res) => {
   const info = await ctxGuild(req, res); if (!info) return;
@@ -1352,8 +1372,14 @@ function attachLogs(client) {
     if (o.nickname !== n.nickname) L(g, 'nicks', '📝 تغيير لقب', `**العضو:** ${who(n.user)}\n**قبل:** ${cut(o.nickname || '-', 100)}\n**بعد:** ${cut(n.nickname || '-', 100)}`);
     if (o.communicationDisabledUntilTimestamp !== n.communicationDisabledUntilTimestamp) {
       const t = n.communicationDisabledUntilTimestamp;
-      LX(g, 'timeouts', t && t > Date.now() ? '⏳ تايم أوت' : '✅ إزالة تايم أوت',
-        `**العضو:** ${who(n.user)}` + (t && t > Date.now() ? `\n**ينتهي:** <t:${Math.floor(t / 1000)}:R>` : ''), AuditLogEvent.MemberUpdate, n.id);
+      const on = !!(t && t > Date.now());
+      if (logTarget(g, 'timeouts')) {
+        execOf(g, AuditLogEvent.MemberUpdate, n.id).then((e) => {
+          const ms = on ? Math.round((t - Date.now()) / 6e4) * 6e4 : undefined;
+          LV2(g, 'timeouts', on ? '⏳ تم إعطاء وقت مستقطع' : '⏳ تم إنهاء الوقت المستقطع',
+            e && e.user ? e.user.id : null, n.user, ms, on ? ((e && e.reason) || '-') : undefined, 'السجلات - وقت مستقطع');
+        }).catch(() => {});
+      }
     }
     if (o.user && n.user && (o.user.avatar !== n.user.avatar || o.user.username !== n.user.username || o.user.globalName !== n.user.globalName)) {
       const ch = [];
@@ -1413,12 +1439,17 @@ function attachLogs(client) {
       `**القديمة**\n\`\`\`\n${fx(o.content)}\n\`\`\`\n**الجديدة**\n\`\`\`\n${fx(n.content)}\n\`\`\``,
       { author: n.author });
   });
-  on(Events.MessageCreate, (m) => {
+    on(Events.MessageCreate, (m) => {
     if (!m.guild || !m.author || m.author.bot || m.webhookId) return;
-    const imgs = [...(m.attachments ? m.attachments.values() : [])].filter((a) => /^(image|video)\//.test(a.contentType || ''));
-    if (imgs.length) L(m.guild, 'images', '🖼️ إرسال صور', `${who(m.author)} في <#${m.channelId}>\n${imgs.slice(0, 5).map((a) => a.url).join('\n')}`);
-    const links = String(m.content || '').match(/https?:\/\/[^\s<>]+/gi);
-    if (links) L(m.guild, 'links', '🔗 نشر روابط', `${who(m.author)} في <#${m.channelId}>\n${cut(links.slice(0, 5).join('\n'), 1500)}`);
+    const MEDIA = /cdn\.discordapp\.com\/(emojis|stickers)|media\.discordapp\.net|tenor\.com|giphy\.com|\.(png|jpe?g|gif|webp|mp4|mov|webm)(\?|$)/i;
+    const files = [...(m.attachments ? m.attachments.values() : [])].filter((a) => /^(image|video)\//.test(a.contentType || '')).map((a) => a.url);
+    const urls = String(m.content || '').match(/https?:\/\/[^\s<>]+/gi) || [];
+    const emo = String(m.content || '').match(/<a?:\w{2,32}:\d{15,25}>/g) || [];
+    const media = [...files, ...urls.filter((u) => MEDIA.test(u)), ...emo];
+    const stk = m.stickers ? [...m.stickers.values()].map((s) => `ملصق: ${s.name}`) : [];
+    if (media.length || stk.length) L(m.guild, 'images', '🖼️ إرسال صور / ملصقات / إيموجي', `${who(m.author)} في <#${m.channelId}>\n${cut([...media, ...stk].slice(0, 5).join('\n'), 1500)}`);
+    const links = urls.filter((u) => !MEDIA.test(u));
+    if (links.length) L(m.guild, 'links', '🔗 نشر روابط', `${who(m.author)} في <#${m.channelId}>\n${cut(links.slice(0, 5).join('\n'), 1500)}`);
   });
 }
 
@@ -2254,7 +2285,7 @@ async function memberLeave(m) {
 function installLogWrap() {
 
 const WRAP = {
-  kick: ['kick', '👢 طرد عضو', 1], mute: ['textmute', '🔇 ميوت كتابي'], unmute: ['textmute', '🔊 فك ميوت كتابي'],
+  kick: ['kick', '👢 طرد عضو', 1], 
   prison: ['prison', '⛓️ سجن عضو', 1], unprison: ['prison', '🔓 فك سجن'], warn: ['warns', '⚠️ تحذير إداري', 1],
   vkick: ['voicekick', '🔌 طرد صوتي'], rblock: ['rblock', '🚫 حظر رتبة'], removeblock: ['rblock', '✅ فك حظر رتبة'],
   clear: ['purge', 'حذف رسائل جماعي'], move: ['voicepull', '↔️ سحب صوتي'], moveme: ['voicepull', '↔️ انتقال صوتي'],
@@ -3018,6 +3049,7 @@ async function applyMute(guild, mod, m, ms, reason) {
   dbk('mutes', guild.id)[m.id] = { until: ms ? Date.now() + ms : 0, by: mod.id, reason, at: Date.now() };
   logInf(guild.id, m.id, 'mute', mod.id, reason, ms);
   dirty = true;
+    LV2(guild, 'textmute', '🔇 تم إعطاء ميوت كتابي', mod.id, m.user, ms, reason || 'بدون سبب', 'السجلات - ميوت كتابي');
   return `🤐 تم إسكات ${m.user.username} !`;
 }
 
@@ -3092,7 +3124,7 @@ function parsePenalty(a) {
 }
 
 const PEN_ICON = { mute: '🤐', prison: '⛓️', timeout: '⏳', ban: '🔨', warn: '⚠️' };
-const PEN_LOG = { mute: ['textmute', '🔇 ميوت كتابي'], prison: ['prison', '⛓️ سجن عضو'], warn: ['warns', '⚠️ تحذير إداري'] };
+const PEN_LOG = { prison: ['prison', '⛓️ سجن عضو'], warn: ['warns', '⚠️ تحذير إداري'] };
 
 // ================= التحذير (قائمة أسباب بدون وقت + رسالة بالخاص) =================
 function warnReasons(gid) {
@@ -3538,6 +3570,7 @@ const HANDLERS = {
     need(o[m.id] || (rid && m.roles.cache.has(rid)), 'هذا العضو مو مسكّت.');
     delete o[m.id]; dirty = true;
     if (rid && m.roles.cache.has(rid)) await m.roles.remove(rid, reasonOf(mod, 'unmute')).catch(() => {});
+        LV2(msg.guild, 'textmute', '🔊 تم فك الميوت الكتابي', mod.id, m.user, undefined, undefined, 'السجلات - ميوت كتابي');
     say(msg, `✅ تم إزالة اسكات ${m.user.username} !`);
   },
   // --- سجن: يسحب كل الرتب ويعطي رتبة Prison + روم واحد، وبعد انتهاء المدة بترجع الرتب ---
@@ -5459,7 +5492,17 @@ app.post('/api/guild/:id/tempvoice/panel', auth, wrap(async (req, res) => {
     res.json({ ok: true });
   }
   catch (e) { res.status(400).json({ error: 'discord_error', detail: discordMsg(e) }); }
-}));
+}));app.get('/api/emoji-servers', auth, (req, res) => {
+  if (!OWNER_IDS.includes(req.session.user.id)) return res.status(403).json({ error: 'forbidden' });
+  const list = client ? [...client.guilds.cache.values()].map((g) => ({ id: g.id, name: g.name, count: g.emojis.cache.size })) : [];
+  res.json({ list });
+});
+app.get('/api/emoji-servers/:sid', auth, (req, res) => {
+  if (!OWNER_IDS.includes(req.session.user.id)) return res.status(403).json({ error: 'forbidden' });
+  const g = client && client.guilds.cache.get(req.params.sid);
+  if (!g) return res.status(404).json({ error: 'not_found' });
+  res.json({ list: [...g.emojis.cache.values()].map((e) => ({ id: e.id, name: e.name, animated: !!e.animated, tag: `<${e.animated ? 'a' : ''}:${e.name}:${e.id}>` })) });
+});
 function tvAllowed(cfg, member) {
   const r = member.roles.cache;
   if (cfg.perms.blockRoles.some((x) => r.has(x))) return false;
@@ -11985,7 +12028,7 @@ loadCoin();
         const view = (v) => { const m = /^<(a?):(\w+):(\d+)>$/.exec(v || ''); return m ? el('img', { src: url(m[3], m[1]), alt: m[2], width: 28, height: 28 }) : document.createTextNode(v || '❔'); };
         let lists = null;
 let servers = null;
-let curServer = null;           // السيرفر المختار
+let curServer = gid;           // السيرفر المختار
 const srvCache = {};            // كاش إيموجيات كل سيرفر
 
 const getServers = async () =>
@@ -12005,7 +12048,25 @@ const getLists = async () => {
 };
         const grid = (list, choose) => el('div', { class: 'emogrid' }, list.map((x) =>
           el('button', { type: 'button', class: 'emoit', title: x.name, onclick: () => choose(x.tag) }, el('img', { src: url(x.id, x.animated), alt: x.name, width: 28, height: 28 }))));
-        
+                const serverBlock = (choose) => {
+          const holder = el('div', { class: 'stack tight' });
+          const gridBox = el('div', {});
+          const sel = el('select', { class: 'sel full', 'aria-label': 'اختر السيرفر' }, el('option', { value: '' }, 'جاري التحميل...'));
+          const showEmojis = async () => {
+            if (!curServer) { put(gridBox, el('small', { class: 'muted' }, 'اختر سيرفر لعرض إيموجياته')); return; }
+            put(gridBox, el('small', { class: 'muted' }, 'جاري التحميل...'));
+            const list = await getServerEmojis(curServer);
+            put(gridBox, list.length ? grid(list, choose) : el('small', { class: 'muted' }, 'ما في إيموجيات بهذا السيرفر'));
+          };
+          getServers().then((arr) => {
+            put(sel, el('option', { value: '' }, 'اختر السيرفر...'),
+              arr.map((s) => el('option', { value: s.id, selected: s.id === curServer }, `${s.name} (${s.count})`)));
+            showEmojis();
+          });
+          sel.addEventListener('change', () => { curServer = sel.value || null; showEmojis(); });
+          put(holder, sel, gridBox);
+          return holder;
+        };
         const draw = () => put(rows, d.buttons.map((b) => {
           const wrap = el('div', { class: 'emowrap' });
           wrap.append(el('button', {
@@ -12026,7 +12087,7 @@ const getLists = async () => {
               const L = await getLists();
               put(body,
                 el('div', { class: 'emotitle' }, 'إيموجيات سيرفر OPS (تعمل بكل السيرفرات)'),
-                L.server.length ? grid(L.server, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
+                serverBlock(choose),
                 el('div', { class: 'emotitle' }, 'إيموجيات البوت (تعمل بكل السيرفرات)'),
                 L.app.length ? grid(L.app, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
                 el('div', { class: 'emotitle' }, 'إيموجيات عادية'),
@@ -12114,7 +12175,7 @@ const getLists = async () => {
                 const L = await getLists();
                 put(body,
                   el('div', { class: 'emotitle' }, 'إيموجيات سيرفر OPS'),
-                  L.server.length ? grid(L.server, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
+                  serverBlock(choose),
                   el('div', { class: 'emotitle' }, 'إيموجيات البوت'),
                   L.app.length ? grid(L.app, choose) : el('small', { class: 'muted' }, 'لا يوجد'),
                   el('div', { class: 'emotitle' }, 'إيموجيات عادية'),
