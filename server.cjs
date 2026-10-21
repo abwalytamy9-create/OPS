@@ -356,6 +356,7 @@ client.on(Events.VoiceStateUpdate, onTempVoice);
     client.on(Events.InteractionCreate, onRolePanelInteraction);
       client.on(Events.InteractionCreate, onTicketInteraction);
             client.on(Events.MessageCreate, onTicketShortcut);
+            client.on(Events.MessageCreate, onTicketAI);
       client.on(Events.InteractionCreate, onApplyInteraction);
         client.on(Events.InteractionCreate, onPenaltyInteraction);
           client.on(Events.InteractionCreate, onInfractionInteraction);
@@ -8275,7 +8276,59 @@ HANDLERS.colors = async function (msg) {
   const c = colorsCfg(msg.guildId);
   need(c.enabled && c.roles.some((id) => msg.guild.roles.cache.has(id)), 'نظام الألوان مو مفعّل أو ما في ألوان.');
   await msg.reply({ files: [{ attachment: await colorsImage(msg.guild, c), name: 'colors.png' }], allowedMentions: { parse: [], repliedUser: false } });
-};
+};// ===================== مساعد التذاكر (Gemini مجاني) =====================
+const TK_AI_GUILDS = ['1537751084171272213'];
+const TK_AI_KEY = process.env.GEMINI_API_KEY || '';
+const TK_AI_MODEL = 'gemini-2.5-flash';
+const tkAiHist = new Map();
+const tkAiBusy = new Set();
+const TK_AI_SYSTEM = `انت مساعد الدعم الفني لبوت "OPS System" داخل تذاكر ديسكورد. احكي بلهجة اردنية بسيطة ومحترمة، وخليك مختصر وواضح (٣-٦ اسطر)، وقسّم الخطوات بنقاط رقمية.
+مهمتك: تساعد العضو يحل مشكلته بالموقع (لوحة التحكم) او بالبوت، وتدله كيف يسوي الشي خطوة خطوة، وتجاوب على اي سؤال بيسأله.
+معلومات عن لوحة التحكم: بيدخل من الموقع بحساب ديسكورد، بيختار السيرفر (لازم يكون مالك او ادمن والبوت موجود فيه). من القائمة الجانبية فيها: الحماية (ذكية، عامة، خاصة، حماية الصور)، إدارة الأوامر، اللوق، الترحيب والمغادرة، الرتب التلقائية، الرتب القابلة للأخذ، الرد التلقائي، الإيمبد، نظام الفضفضة، نظام المستويات، تنظيم القنوات، الروم المؤقت، التذاكر، التقديم، نظام الألوان، نظام عملات OPS Coin، والبريميوم.
+اي تعديل بالموقع لازم تضغط "حفظ الإعدادات" بالشريط اللي بيطلع تحت.
+الأوامر بالبوت بتنكتب بالشكل: اسم الأمر ثم علامة تعجب مثل help! او ping!
+البوت لازم رتبته تكون أعلى من الرتب اللي بدو يتحكم فيها، ولازم يكون عنده الصلاحيات المطلوبة.
+قواعد: لا تخترع ميزات مو موجودة بالبوت. اذا ما كنت متأكد او المشكلة معقدة، قله يضغط زر "طلب الدعم" بالتذكرة وبيجيه حد من الإدارة. لا تطلب منه توكن البوت او اي سر ابدا.`;
+
+async function onTicketAI(msg) {
+  if (!TK_AI_KEY || !msg.guildId || !TK_AI_GUILDS.includes(msg.guildId)) return;
+  if (!msg.author || msg.author.bot || msg.webhookId || !msg.content) return;
+  const st = db.tickets && db.tickets[msg.guildId];
+  const room = st && st.rooms && st.rooms[msg.channelId];
+  if (!room || room.closed || room.claimer) return;      // مقفلة او مستلمة = البوت يسكت
+  if (msg.author.id !== room.owner) return;               // يرد على صاحب التذكرة بس
+  if (tkAiBusy.has(msg.channelId)) return;
+  tkAiBusy.add(msg.channelId);
+  try {
+    msg.channel.sendTyping().catch(() => {});
+    const hist = tkAiHist.get(msg.channelId) || [];
+    const first = !hist.length && room.reason ? `سبب فتح التذكرة: ${room.reason}\n\n` : '';
+    hist.push({ role: 'user', parts: [{ text: (first + msg.content).slice(0, 1500) }] });
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${TK_AI_MODEL}:generateContent`;
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': TK_AI_KEY },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: TK_AI_SYSTEM }] },
+        contents: hist.slice(-10),
+        generationConfig: { maxOutputTokens: 700 },
+      }),
+      signal: AbortSignal.timeout(25000),
+    });
+    if (!r.ok) throw new Error('gemini ' + r.status);
+    const j = await r.json();
+    const parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
+    const text = parts.map((x) => x.text || '').join('').trim();
+    if (!text) throw new Error('empty reply');
+    hist.push({ role: 'model', parts: [{ text }] });
+    tkAiHist.set(msg.channelId, hist.slice(-12));
+    await msg.reply({ content: text.slice(0, 1900), allowedMentions: { parse: [], repliedUser: false } });
+  } catch (e) {
+    console.error('[ticket-ai]', e.message);
+    const h = tkAiHist.get(msg.channelId);
+    if (h && h.length && h[h.length - 1].role === 'user') h.pop();   // عشان المحادثة تضل مرتبة
+  } finally { tkAiBusy.delete(msg.channelId); }
+}
 // =====================  FRONT-END (كله داخل هذا الملف)  =====================
 
 // Runs in the browser (served as /app.js) — الصفحة الرئيسية
