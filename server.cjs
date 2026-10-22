@@ -8329,7 +8329,7 @@ async function onTicketAI(msg) {
       }),
       signal: AbortSignal.timeout(25000),
     });
-    if (!r.ok) throw new Error('gemini ' + r.status);
+    if (!r.ok) throw new Error('gemini ' + r.status + ' ' + (await r.text()).slice(0, 300));
     const j = await r.json();
     const parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
     const text = parts.map((x) => x.text || '').join('').trim();
