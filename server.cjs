@@ -8314,7 +8314,7 @@ async function onTicketAI(msg) {
   if (tkAiBusy.has(msg.channelId)) return;
   tkAiBusy.add(msg.channelId);
   try {
-    msg.channel.sendTyping().catch(() => {});
+    
     const hist = tkAiHist.get(msg.channelId) || [];
     const first = !hist.length && room.reason ? `سبب فتح التذكرة: ${room.reason}\n\n` : '';
     hist.push({ role: 'user', parts: [{ text: (first + msg.content).slice(0, 1500) }] });
@@ -8325,12 +8325,11 @@ async function onTicketAI(msg) {
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: tkAiSystem(msg.guildId) }] },
         contents: hist.slice(-10),
-        generationConfig: { maxOutputTokens: 700 },
+        generationConfig: { maxOutputTokens: 500, temperature: 0.4 },
       }),
       signal: AbortSignal.timeout(25000),
     });
-    if (!r.ok) throw new Error('gemini ' + r.status + ' ' + (await r.text()).slice(0, 300));
-    const j = await r.json();
+if (!r.ok) throw new Error('gemini ' + r.status + ' ' + (await r.text()).slice(0, 300));    const j = await r.json();
     const parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
     const text = parts.map((x) => x.text || '').join('').trim();
     if (!text) throw new Error('empty reply');
@@ -8339,6 +8338,7 @@ async function onTicketAI(msg) {
     await msg.reply({ content: text.slice(0, 1900), allowedMentions: { parse: [], repliedUser: false } });
   } catch (e) {
     console.error('[ticket-ai]', e.message);
+    msg.reply({ content: '⏳ المساعد مشغول حالياً. اضغط زر "طلب الدعم" وبيجيك حد من الإدارة.', allowedMentions: { parse: [], repliedUser: false } }).catch(() => {});
     const h = tkAiHist.get(msg.channelId);
     if (h && h.length && h[h.length - 1].role === 'user') h.pop();   // عشان المحادثة تضل مرتبة
   } finally { tkAiBusy.delete(msg.channelId); }
