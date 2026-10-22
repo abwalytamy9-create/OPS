@@ -8279,7 +8279,7 @@ HANDLERS.colors = async function (msg) {
 };// ===================== مساعد التذاكر (Gemini مجاني) =====================
 const TK_AI_GUILDS = ['1537751084171272213'];
 const TK_AI_KEY = process.env.GEMINI_API_KEY || '';
-const TK_AI_MODEL = 'gemini-flash-latest';
+const TK_AI_MODEL = 'gemini-2.0-flash';
 const tkAiHist = new Map();
 const tkAiBusy = new Set();
 const TK_AI_BASE = `انت مساعد الدعم الفني لبوت "OPS System" داخل تذاكر ديسكورد. احكي بلهجة اردنية بسيطة ومحترمة، مختصر وواضح (٣-٦ اسطر)، وقسّم الخطوات بنقاط رقمية.
@@ -8318,18 +8318,25 @@ async function onTicketAI(msg) {
     const hist = tkAiHist.get(msg.channelId) || [];
     const first = !hist.length && room.reason ? `سبب فتح التذكرة: ${room.reason}\n\n` : '';
     hist.push({ role: 'user', parts: [{ text: (first + msg.content).slice(0, 1500) }] });
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${TK_AI_MODEL}:generateContent`;
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': TK_AI_KEY },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: tkAiSystem(msg.guildId) }] },
-        contents: hist.slice(-10),
-        generationConfig: { maxOutputTokens: 500, temperature: 0.4 },
-      }),
-      signal: AbortSignal.timeout(25000),
+        const payload = JSON.stringify({
+      systemInstruction: { parts: [{ text: tkAiSystem(msg.guildId) }] },
+      contents: hist.slice(-10),
+      generationConfig: { maxOutputTokens: 500, temperature: 0.4 },
     });
-if (!r.ok) throw new Error('gemini ' + r.status + ' ' + (await r.text()).slice(0, 300));    const j = await r.json();
+    let j = null, lastErr = '';
+    for (const model of TK_AI_MODELS) {
+      try {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': TK_AI_KEY },
+          body: payload,
+          signal: AbortSignal.timeout(10000),
+        });
+        if (r.ok) { j = await r.json(); break; }
+        lastErr = model + ' ' + r.status + ' ' + (await r.text()).slice(0, 200);
+      } catch (e2) { lastErr = model + ' ' + e2.message; }
+    }
+    if (!j) throw new Error(lastErr);
     const parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
     const text = parts.map((x) => x.text || '').join('').trim();
     if (!text) throw new Error('empty reply');
