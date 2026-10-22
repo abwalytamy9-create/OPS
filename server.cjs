@@ -8279,7 +8279,7 @@ HANDLERS.colors = async function (msg) {
 };// ===================== مساعد التذاكر (Gemini مجاني) =====================
 const TK_AI_GUILDS = ['1537751084171272213'];
 const TK_AI_KEY = process.env.GEMINI_API_KEY || '';
-const TK_AI_MODEL = 'gemini-2.0-flash';
+const TK_AI_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-flash-latest'];
 const tkAiHist = new Map();
 const tkAiBusy = new Set();
 const TK_AI_BASE = `انت مساعد الدعم الفني لبوت "OPS System" داخل تذاكر ديسكورد. احكي بلهجة اردنية بسيطة ومحترمة، مختصر وواضح (٣-٦ اسطر)، وقسّم الخطوات بنقاط رقمية.
