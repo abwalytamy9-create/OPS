@@ -8324,17 +8324,24 @@ async function onTicketAI(msg) {
       generationConfig: { maxOutputTokens: 500, temperature: 0.4 },
     });
     let j = null, lastErr = '';
-    for (const model of TK_AI_MODELS) {
-      try {
-        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-goog-api-key': TK_AI_KEY },
-          body: payload,
-          signal: AbortSignal.timeout(10000),
-        });
-        if (r.ok) { j = await r.json(); break; }
-        lastErr = model + ' ' + r.status + ' ' + (await r.text()).slice(0, 200);
-      } catch (e2) { lastErr = model + ' ' + e2.message; }
+    for (let attempt = 0; attempt < 2 && !j; attempt++) {
+      if (attempt) await new Promise((r) => setTimeout(r, 2500));   // استنى شوي وجرب مرة ثانية
+      for (const model of TK_AI_MODELS) {
+        try {
+          const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-goog-api-key': TK_AI_KEY },
+            body: payload,
+            signal: AbortSignal.timeout(20000),
+          });
+          if (r.ok) { j = await r.json(); break; }
+          lastErr = model + ' ' + r.status + ' ' + (await r.text()).slice(0, 120);
+          console.error('[ticket-ai] fail:', lastErr);
+        } catch (e2) {
+          lastErr = model + ' ' + e2.message;
+          console.error('[ticket-ai] fail:', lastErr);
+        }
+      }
     }
     if (!j) throw new Error(lastErr);
     const parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
