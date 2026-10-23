@@ -8278,9 +8278,8 @@ HANDLERS.colors = async function (msg) {
   await msg.reply({ files: [{ attachment: await colorsImage(msg.guild, c), name: 'colors.png' }], allowedMentions: { parse: [], repliedUser: false } });
 };// ===================== مساعد التذاكر (Gemini مجاني) =====================
 const TK_AI_GUILDS = ['1537751084171272213'];
-const TK_AI_KEY = process.env.GEMINI_API_KEY || '';
-const TK_AI_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-flash-latest'];
-const tkAiHist = new Map();
+const TK_AI_KEY = process.env.GROQ_API_KEY || '';
+const TK_AI_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];const tkAiHist = new Map();
 const tkAiBusy = new Set();
 const TK_AI_BASE = `انت مساعد الدعم الفني لبوت "OPS System" داخل تذاكر ديسكورد. احكي بلهجة اردنية بسيطة ومحترمة، مختصر وواضح (٣-٦ اسطر)، وقسّم الخطوات بنقاط رقمية.
 مهمتك تساعد العضو يحل مشكلته بلوحة التحكم او بالاوامر، وتجاوب على اي سؤال عن البوت.
@@ -8309,44 +8308,45 @@ async function onTicketAI(msg) {
   if (!msg.author || msg.author.bot || msg.webhookId || !msg.content) return;
   const st = db.tickets && db.tickets[msg.guildId];
   const room = st && st.rooms && st.rooms[msg.channelId];
-  if (!room || room.closed || room.claimer) return;      // مقفلة او مستلمة = البوت يسكت
-  if (msg.author.id !== room.owner) return;               // يرد على صاحب التذكرة بس
+  if (!room || room.closed || room.claimer) return;
+  if (msg.author.id !== room.owner) return;
   if (tkAiBusy.has(msg.channelId)) return;
   tkAiBusy.add(msg.channelId);
   try {
-    
     const hist = tkAiHist.get(msg.channelId) || [];
     const first = !hist.length && room.reason ? `سبب فتح التذكرة: ${room.reason}\n\n` : '';
     hist.push({ role: 'user', parts: [{ text: (first + msg.content).slice(0, 1500) }] });
-        const payload = JSON.stringify({
-      systemInstruction: { parts: [{ text: tkAiSystem(msg.guildId) }] },
-      contents: hist.slice(-10),
-      generationConfig: { maxOutputTokens: 500, temperature: 0.4 },
-    });
-    let j = null, lastErr = '';
-    for (let attempt = 0; attempt < 2 && !j; attempt++) {
-      if (attempt) await new Promise((r) => setTimeout(r, 2500));   // استنى شوي وجرب مرة ثانية
+    msg.channel.sendTyping().catch(() => {});
+    const messages = [
+      { role: 'system', content: tkAiSystem(msg.guildId) },
+      ...hist.slice(-10).map((h) => ({ role: h.role === 'model' ? 'assistant' : 'user', content: h.parts[0].text })),
+    ];
+    let text = '', lastErr = '';
+    for (let attempt = 0; attempt < 2 && !text; attempt++) {
+      if (attempt) await new Promise((r) => setTimeout(r, 2000));
       for (const model of TK_AI_MODELS) {
         try {
-          const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
-            headers: { 'content-type': 'application/json', 'x-goog-api-key': TK_AI_KEY },
-            body: payload,
+            headers: { 'content-type': 'application/json', authorization: 'Bearer ' + TK_AI_KEY },
+            body: JSON.stringify({ model, messages, temperature: 0.4, max_tokens: 500 }),
             signal: AbortSignal.timeout(20000),
           });
-          if (r.ok) { j = await r.json(); break; }
-          lastErr = model + ' ' + r.status + ' ' + (await r.text()).slice(0, 120);
-          console.error('[ticket-ai] fail:', lastErr);
+          if (r.ok) {
+            const j = await r.json();
+            text = String((((j.choices || [])[0] || {}).message || {}).content || '').trim();
+            if (text) break;
+          } else {
+            lastErr = model + ' ' + r.status + ' ' + (await r.text()).slice(0, 150);
+            console.error('[ticket-ai] fail:', lastErr);
+          }
         } catch (e2) {
           lastErr = model + ' ' + e2.message;
           console.error('[ticket-ai] fail:', lastErr);
         }
       }
     }
-    if (!j) throw new Error(lastErr);
-    const parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
-    const text = parts.map((x) => x.text || '').join('').trim();
-    if (!text) throw new Error('empty reply');
+    if (!text) throw new Error(lastErr || 'empty reply');
     hist.push({ role: 'model', parts: [{ text }] });
     tkAiHist.set(msg.channelId, hist.slice(-12));
     await msg.reply({ content: text.slice(0, 1900), allowedMentions: { parse: [], repliedUser: false } });
@@ -8354,10 +8354,9 @@ async function onTicketAI(msg) {
     console.error('[ticket-ai]', e.message);
     msg.reply({ content: '⏳ المساعد مشغول حالياً. اضغط زر "طلب الدعم" وبيجيك حد من الإدارة.', allowedMentions: { parse: [], repliedUser: false } }).catch(() => {});
     const h = tkAiHist.get(msg.channelId);
-    if (h && h.length && h[h.length - 1].role === 'user') h.pop();   // عشان المحادثة تضل مرتبة
+    if (h && h.length && h[h.length - 1].role === 'user') h.pop();
   } finally { tkAiBusy.delete(msg.channelId); }
-}
-// =====================  FRONT-END (كله داخل هذا الملف)  =====================
+}// =====================  FRONT-END (كله داخل هذا الملف)  =====================
 
 // Runs in the browser (served as /app.js) — الصفحة الرئيسية
 function clientMain() {
