@@ -358,6 +358,7 @@ client.on(Events.VoiceStateUpdate, onTempVoice);
       client.on(Events.InteractionCreate, onTicketInteraction);
             client.on(Events.MessageCreate, onTicketShortcut);
             client.on(Events.MessageCreate, onTicketAI);
+            client.on(Events.MessageCreate, onAiRoom);
       client.on(Events.InteractionCreate, onApplyInteraction);
         client.on(Events.InteractionCreate, onPenaltyInteraction);
           client.on(Events.InteractionCreate, onInfractionInteraction);
@@ -8303,13 +8304,13 @@ function tkAiSystem(gid) {
   });
   return TK_AI_BASE + '\n\nقائمة الاوامر الكاملة:\n' + lines.join('\n');
 }
-
+const AI_CHANNELS = ['1558190110112227468'];
 async function onTicketAI(msg) {
-  if (!TK_AI_KEY || !msg.guildId || !TK_AI_GUILDS.includes(msg.guildId)) return;
+  if (!TK_AI_KEY || !msg.guildId) return;
   if (!msg.author || msg.author.bot || msg.webhookId || !msg.content) return;
   const st = db.tickets && db.tickets[msg.guildId];
   const room = st && st.rooms && st.rooms[msg.channelId];
-  if (!room || room.closed || room.claimer) return;
+  if (!room || room.closed) return;
   if (msg.author.id !== room.owner) return;
   if (tkAiBusy.has(msg.channelId)) return;
   tkAiBusy.add(msg.channelId);
@@ -8358,7 +8359,45 @@ async function onTicketAI(msg) {
     if (h && h.length && h[h.length - 1].role === 'user') h.pop();
   } finally { tkAiBusy.delete(msg.channelId); }
 }// =====================  FRONT-END (كله داخل هذا الملف)  =====================
-
+const aiRoomBusy = new Set();
+const aiRoomHist = new Map();
+async function onAiRoom(msg) {
+  if (!TK_AI_KEY || !msg.guildId || !AI_CHANNELS.includes(msg.channelId)) return;
+  if (!msg.author || msg.author.bot || msg.webhookId || !msg.content) return;
+  if (resolveCmd(msg.guildId, msg.content.trim().split(/\s+/)[0].toLowerCase())) return;
+  const key = msg.channelId + ':' + msg.author.id;
+  if (aiRoomBusy.has(key)) return;
+  aiRoomBusy.add(key);
+  try {
+    const hist = aiRoomHist.get(key) || [];
+    hist.push({ role: 'user', content: msg.content.slice(0, 1500) });
+    msg.channel.sendTyping().catch(() => {});
+    const messages = [{ role: 'system', content: tkAiSystem(msg.guildId) }, ...hist.slice(-8)];
+    let text = '';
+    for (const model of TK_AI_MODELS) {
+      try {
+        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: 'Bearer ' + TK_AI_KEY },
+          body: JSON.stringify({ model, messages, temperature: 0.4, max_tokens: 1500 }),
+          signal: AbortSignal.timeout(20000),
+        });
+        if (r.ok) {
+          const j = await r.json();
+          text = String((((j.choices || [])[0] || {}).message || {}).content || '').trim();
+          if (text) break;
+        } else console.error('[ai-room] fail:', model, r.status);
+      } catch (e2) { console.error('[ai-room] fail:', model, e2.message); }
+    }
+    if (!text) throw new Error('no reply');
+    hist.push({ role: 'assistant', content: text });
+    aiRoomHist.set(key, hist.slice(-10));
+    await msg.reply({ content: text.slice(0, 1900), allowedMentions: { parse: [], repliedUser: false } });
+  } catch (e) {
+    console.error('[ai-room]', e.message);
+    msg.reply({ content: '⏳ المساعد مشغول حالياً، جرب بعد شوي.', allowedMentions: { parse: [], repliedUser: false } }).catch(() => {});
+  } finally { aiRoomBusy.delete(key); }
+}
 // Runs in the browser (served as /app.js) — الصفحة الرئيسية
 function clientMain() {
   const I18N = {
