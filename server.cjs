@@ -291,10 +291,7 @@ function startBot(withMembers = true) {
     botReady = true;
         console.log('[emoji-check]', ['1561146785244647457','1561137631226761238','1561138316785623042','1561138833091989505','1561139734993178635','1561140231581995099','1561140861117399194','1561141648979796011','1561142611425890397','1561143201165738120','1561143717950390427','1561144118711689286','1561144785551495209','1561144796184191088','1561145245641478165'].map((id) => id + ':' + (client.emojis.cache.has(id) ? 'OK' : 'MISSING')).join('\n'));
     console.log(`Bot online: ${c.user.tag} (${c.guilds.cache.size} سيرفر)`);
-        fetch('https://api.groq.com/openai/v1/models', { headers: { authorization: 'Bearer ' + (process.env.GROQ_API_KEY || '') } })
-      .then((r) => r.json())
-      .then((j) => console.log('[groq-models]', (j.data || []).map((m) => m.id).join(', ')))
-      .catch((e) => console.error('[groq-models]', e.message));
+    
         console.log('GuildMembers intent مفعّل بالكود:', client.options.intents.has(GatewayIntentBits.GuildMembers));
     tvSweep().catch(() => {});   // ← هون
         gvSweep().catch(() => {});
@@ -8283,7 +8280,7 @@ HANDLERS.colors = async function (msg) {
 };// ===================== مساعد التذاكر (Gemini مجاني) =====================
 const TK_AI_GUILDS = ['1537751084171272213'];
 const TK_AI_KEY = process.env.GROQ_API_KEY || '';
-const TK_AI_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];const tkAiHist = new Map();
+const TK_AI_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'allam-2-7b'];const tkAiHist = new Map();
 const tkAiBusy = new Set();
 const TK_AI_BASE = `انت مساعد الدعم الفني لبوت "OPS System" داخل تذاكر ديسكورد. احكي بلهجة اردنية بسيطة ومحترمة، مختصر وواضح (٣-٦ اسطر)، وقسّم الخطوات بنقاط رقمية.
 مهمتك تساعد العضو يحل مشكلته بلوحة التحكم او بالاوامر، وتجاوب على اي سؤال عن البوت.
@@ -8333,7 +8330,7 @@ async function onTicketAI(msg) {
           const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
             headers: { 'content-type': 'application/json', authorization: 'Bearer ' + TK_AI_KEY },
-            body: JSON.stringify({ model, messages, temperature: 0.4, max_tokens: 500 }),
+            body: JSON.stringify({ model, messages, temperature: 0.4, max_tokens: 1500 }),
             signal: AbortSignal.timeout(20000),
           });
           if (r.ok) {
