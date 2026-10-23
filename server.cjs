@@ -300,6 +300,7 @@ function startBot(withMembers = true) {
     setInterval(() => prisonSweep().catch(() => {}), 30000);
     setInterval(() => muteSweep().catch(() => {}), 30000);
         setInterval(() => sprSweep().catch(() => {}), 30000);
+    setInterval(() => topsSweep().catch(() => {}), 60000);
     for (const g of c.guilds.cache.values()) {
       cacheInvites(g);
       
@@ -7142,6 +7143,7 @@ setInterval(() => { const c = Date.now() - 120000; for (const [k, v] of ecoPendi
 function ecoCfg(gid) {
   const s = (db.settings[gid] || {}).economy || {};
   const prem = isPremium(gid);
+    const tmo = (o) => { const n = parseInt(o && o.timeN, 10), u = o && o.timeU; const uu = has(PEN_UNITS, u) ? u : 'm'; return { timeN: n >= 0 && n * PEN_UNITS[uu] <= PEN_MAX ? n : 10, timeU: uu }; };
   const em = typeof s.emoji === 'string' ? s.emoji.trim() : '';
   return {
     enabled: !!s.enabled,
@@ -7524,27 +7526,27 @@ function gprClean(b, gid) {
   const ab = b.antiBots || {}, ar = b.antiRaid || {}, al = b.antiLinks || {}, sp = b.antiSpam || {};
   const su = b.serverUpdate || {}, ch = b.channels || {}, rl = b.roles || {};
   return {
-    antiBots: { enabled: on(ab, 'enabled'), botAction: pick(ab.botAction, ['kick', 'ban'], 'kick'), adderAction: pick(ab.adderAction, GPR_ACTIONS, 'strip'), exemptRoles: ids(ab, 'exemptRoles', roles) },
+    antiBots: { enabled: on(ab, 'enabled'), botAction: pick(ab.botAction, ['kick', 'ban'], 'kick'), adderAction: pick(ab.adderAction, GPR_ACTIONS, 'strip'), exemptRoles: ids(ab, 'exemptRoles', roles), ...tmo(ab) },
     antiRaid: {
       enabled: on(ar, 'enabled'), count: num(ar.count, 5, 2, 100), secs: num(ar.secs, 10, 1, 300),
       channel: chans.has(String(ar.channel)) ? String(ar.channel) : null,
-      actionOn: on(ar, 'actionOn'), action: pick(ar.action, ['kick', 'ban', 'prison'], 'kick'),
+      actionOn: on(ar, 'actionOn'), action: pick(ar.action, ['kick', 'ban', 'prison'], 'kick'), ...tmo(ar),
     },
     antiLinks: {
       enabled: on(al, 'enabled'), action: pick(al.action, GPR_EXTRA, 'delete'),
-      exemptRoles: ids(al, 'exemptRoles', roles), exemptChannels: ids(al, 'exemptChannels', chans), forwarded: on(al, 'forwarded'),
+      exemptRoles: ids(al, 'exemptRoles', roles), exemptChannels: ids(al, 'exemptChannels', chans), forwarded: on(al, 'forwarded'), ...tmo(al),
     },
     antiSpam: {
-      enabled: on(sp, 'enabled'), repeat: num(sp.repeat, 3, 1, 20), sim: num(sp.sim, 90, 50, 100), inner: num(sp.inner, 80, 30, 100),
+      enabled: on(sp, 'enabled'), repeat: num(sp.repeat, 2, 2, 20), sim: num(sp.sim, 90, 50, 100), inner: num(sp.inner, 80, 30, 100),
       action: pick(sp.action, GPR_EXTRA, 'delete'),
-      exemptRoles: ids(sp, 'exemptRoles', roles), exemptChannels: ids(sp, 'exemptChannels', chans),
+      exemptRoles: ids(sp, 'exemptRoles', roles), exemptChannels: ids(sp, 'exemptChannels', chans), ...tmo(sp),
 
     },    emojiLimit: { enabled: prem && on(b.emojiLimit, 'enabled'), max: num((b.emojiLimit || {}).max, 12, 1, 100), exemptRoles: ids(b.emojiLimit, 'exemptRoles', roles), actions: actsClean((b.emojiLimit || {}).actions, chans) },
     lineLimit: { enabled: prem && on(b.lineLimit, 'enabled'), max: num((b.lineLimit || {}).max, 12, 1, 100), exemptRoles: ids(b.lineLimit, 'exemptRoles', roles), actions: actsClean((b.lineLimit || {}).actions, chans) },
-    serverUpdate: { lockName: on(su, 'lockName'), lockIcon: on(su, 'lockIcon'), action: pick(su.action, GPR_ACTIONS, 'strip'), exemptRoles: ids(su, 'exemptRoles', roles) },
-    webhook: { enabled: on(b.webhook, 'enabled'), action: pick(b.webhook && b.webhook.action, GPR_ACTIONS, 'strip'), exemptRoles: ids(b.webhook, 'exemptRoles', roles) },
-    channels: { lockCreate: on(ch, 'lockCreate'), lockDelete: on(ch, 'lockDelete'), lockEdit: on(ch, 'lockEdit'), action: pick(ch.action, GPR_ACTIONS, 'strip'), exemptRoles: ids(ch, 'exemptRoles', roles) },
-    roles: { lockCreate: on(rl, 'lockCreate'), lockDelete: on(rl, 'lockDelete'), lockEdit: on(rl, 'lockEdit'), action: pick(rl.action, GPR_ACTIONS, 'strip'), exemptRoles: ids(rl, 'exemptRoles', roles) },
+    serverUpdate: { lockName: on(su, 'lockName'), lockIcon: on(su, 'lockIcon'), action: pick(su.action, GPR_ACTIONS, 'strip'), exemptRoles: ids(su, 'exemptRoles', roles), ...tmo(su) },
+    webhook: { enabled: on(b.webhook, 'enabled'), action: pick(b.webhook && b.webhook.action, GPR_ACTIONS, 'strip'), exemptRoles: ids(b.webhook, 'exemptRoles', roles), ...tmo(b.webhook) },
+    channels: { lockCreate: on(ch, 'lockCreate'), lockDelete: on(ch, 'lockDelete'), lockEdit: on(ch, 'lockEdit'), action: pick(ch.action, GPR_ACTIONS, 'strip'), exemptRoles: ids(ch, 'exemptRoles', roles), ...tmo(ch) },
+    roles: { lockCreate: on(rl, 'lockCreate'), lockDelete: on(rl, 'lockDelete'), lockEdit: on(rl, 'lockEdit'), action: pick(rl.action, GPR_ACTIONS, 'strip'), exemptRoles: ids(rl, 'exemptRoles', roles), ...tmo(rl) },
   };
 }
 const gprStored = (gid) => { try { return gprClean((db.settings[gid] || {}).genprot || {}, gid); } catch (_) { return gprClean({}, gid); } };
@@ -7635,14 +7637,15 @@ async function gprDM(user, reason, guild) {
   } catch (_) { /* الخاص مسكّر */ }
 }
 
+const penTime = (c) => (c.timeN || 0) * (PEN_UNITS[c.timeU] || 0);
 // تنفيذ الإجراء على عضو
-async function gprPunish(guild, member, action, why) {
+async function gprPunish(guild, member, action, why, ms = 0) {
   const me = guild.members.me;
   if (!member) return { done: false, text: 'العضو غير موجود' };
   if (member.id === guild.ownerId) return { done: false, text: 'العضو مالك السيرفر' };
   if (!me || member.roles.highest.position >= me.roles.highest.position) return { done: false, text: 'العضو اعلى من البوت' };
   try {
-    if (action === 'prison') { await applyPrison(guild, me, member, 0, why); return { done: true, text: 'تم سجن العضو' }; }
+    if (action === 'prison') { await applyPrison(guild, me, member, ms, why); return { done: true, text: 'تم سجن العضو' }; }
     if (action === 'strip') return await guardStripAll(guild, member);
     if (action === 'stripRolePerms') {
       const bad = member.roles.cache.filter((r) => r.id !== guild.id && !r.managed && r.editable && GPR_DANGER.some((p) => r.permissions.has(p)));
@@ -7654,13 +7657,13 @@ async function gprPunish(guild, member, action, why) {
 }
 
 // الإجراء الإضافي (روابط / سبام)
-async function gprExtra(msg, extra, reason) {
+async function gprExtra(msg, extra, reason, ms = 0) {
   const g = msg.guild, m = msg.member, me = g.members.me;
   if (extra === 'warn') {
     logInf(g.id, msg.author.id, 'warn', client.user.id, reason);
     await gprDM(msg.author, reason, g);
   } else if (extra === 'mute' && m && me && m.id !== g.ownerId && m.roles.highest.position < me.roles.highest.position) {
-    await applyMute(g, me, m, GPR_MUTE_MS, reason).catch(() => {});
+    await applyMute(g, me, m, ms, reason).catch(() => {});
     await gprDM(msg.author, reason, g);
   }
 }
@@ -7685,7 +7688,7 @@ async function onGenProtMsg(msg) {
     const snaps = al.forwarded && msg.messageSnapshots ? [...msg.messageSnapshots.values()].map((s) => s.content || '').join('\n') : '';
     if (gprHasLink(text) || (snaps && gprHasLink(snaps))) {
       await msg.delete().catch(() => {});
-      await gprExtra(msg, al.action, 'نشر روابط (Anti-Links)');
+      await gprExtra(msg, al.action, 'نشر روابط (Anti-Links)', penTime(al));
       return;
     }
   }
@@ -7709,15 +7712,12 @@ async function onGenProtMsg(msg) {
 
   let run = 0;
   for (let i = hist.length - 1; i >= 0; i--) { if (gprSim(norm, hist[i].norm) >= sp.sim) run++; else break; }
-  let reason = null, toDel = [{ msg }];
-  if (run > sp.repeat) { reason = 'تكرار الرسائل (سبام)'; toDel = hist.filter((x) => gprSim(norm, x.norm) >= sp.sim); }
+  let reason = null;
+  if (run >= sp.repeat) reason = 'تكرار الرسائل (سبام)';
   else if (gprInner(text) >= sp.inner) reason = 'تكرار الكلام داخل الرسالة (سبام)';
-
   if (!reason) return;
-
-  gprMsgs.delete(k);
-  for (const x of toDel) x.msg.delete().catch(() => {});
-  await gprExtra(msg, sp.action, reason);
+  msg.delete().catch(() => {});
+  await gprExtra(msg, sp.action, reason, penTime(sp));
 }
 
 // ---------- مكافحة الغارات ----------
@@ -7740,7 +7740,7 @@ async function onRaidJoin(m) {
     const mem = id === m.id ? m : await g.members.fetch(id).catch(() => null);
     if (!mem) continue;
     await gprDM(mem.user, 'دخول جماعي مشبوه (غارة)', g);
-    const res = cfg.actionOn ? await gprPunish(g, mem, cfg.action, 'OPS: مكافحة الغارات') : null;
+    const res = cfg.actionOn ? await gprPunish(g, mem, cfg.action, 'OPS: مكافحة الغارات', penTime(cfg)) : null;
     lines.push(`<@${id}>` + (res ? ` — ${res.done ? '✅' : '⚠️'} ${res.text}` : ''));
   }
   if (active) return;
@@ -7766,7 +7766,7 @@ async function gprRole(guild, flag, type, role, revert, title) {
   const mem = await guild.members.fetch(uid).catch(() => null);
   if (mem && arr(c.exemptRoles).some((r) => mem.roles.cache.has(r))) return;
   await revert().catch(() => {});
-  const res = mem ? await gprPunish(guild, mem, c.action, 'OPS: حماية الرتب') : { done: false, text: 'العضو غير موجود بالسيرفر' };
+  const res = mem ? await gprPunish(guild, mem, c.action, 'OPS: حماية الرتب', penTime(c)) : { done: false, text: 'العضو غير موجود بالسيرفر' };
   L(guild, 'roles', title, `**المنفذ:** <@${uid}>\n**الرتبة:** \`${cut(role.name, 80)}\`\n**الإجراء:** ${res.done ? '✅' : '⚠️'} ${res.text}`);
 }
 // ---------- حماية الويب هوك ----------
@@ -7794,7 +7794,7 @@ async function onWebhooksUpdate(ch) {
 
   let removed = false;
   if (en.target && en.target.id) removed = await client.rest.delete(Routes.webhook(en.target.id), { reason: 'OPS: حماية الويب هوك' }).then(() => true, () => false);
-  const res = mem ? await gprPunish(guild, mem, c.action, 'OPS: حماية الويب هوك') : { done: false, text: 'العضو غير موجود بالسيرفر' };
+  const res = mem ? await gprPunish(guild, mem, c.action, 'OPS: حماية الويب هوك', penTime(c)) : { done: false, text: 'العضو غير موجود بالسيرفر' };
   L(guild, 'channels', '🛡️ حماية الويب هوك',
     `**المنفذ:** <@${uid}>\n**الروم:** <#${ch.id}>\n**حذف الويب هوك:** ${removed ? '✅ تم' : '⚠️ ما قدرت'}\n**الإجراء:** ${res.done ? '✅' : '⚠️'} ${res.text}`);
 }
@@ -7894,7 +7894,78 @@ async function onAutoProt(msg) {
   dirty = true; save();
   res.json({ ok: true });
 });
-
+// ===================== نظام التوبات التلقائية =====================
+const TOPS_TYPES = ['text', 'voice', 'mixed'], TOPS_PERIODS = ['daily', 'weekly', 'monthly'];
+const TOPS_DEF_TIME = '02:55';
+const topsLimit = (gid) => (isPremium(gid) ? 1000 : 3);
+const hmFmt = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const wdFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short' });
+function topsCfg(gid) {
+  const s = (db.settings[gid] || {}).autotops || {};
+  const prem = isPremium(gid);
+  return {
+    enabled: !!s.enabled,
+    items: arr(s.items).filter((x) => x && SNOW.test(String(x.channel))).slice(0, topsLimit(gid)).map((x) => ({
+      id: String(x.id), channel: String(x.channel),
+      type: TOPS_TYPES.includes(x.type) ? x.type : 'text',
+      period: TOPS_PERIODS.includes(x.period) ? x.period : 'daily',
+      role: SNOW.test(String(x.role || '')) ? String(x.role) : null,
+      time: prem && /^([01]\d|2[0-3]):[0-5]\d$/.test(String(x.time)) ? x.time : '',
+      last: String(x.last || ''),
+    })),
+  };
+}
+app.get('/api/guild/:id/autotops', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res); if (!info) return;
+  res.json({ canManage: info.canManage, guildPremium: isPremium(info.id), max: topsLimit(info.id), defTime: TOPS_DEF_TIME, channels: textChannels(info.id), roles: roleList(info.id), cfg: topsCfg(info.id) });
+}));
+app.put('/api/guild/:id/autotops', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res, { manage: true }); if (!info) return;
+  const b = (req.body || {}).cfg;
+  if (!b || !Array.isArray(b.items)) return res.status(400).json({ error: 'bad_value' });
+  if (b.items.length > topsLimit(info.id)) return res.status(400).json({ error: 'limit_reached' });
+  const chans = new Set(textChannels(info.id).map((c) => c.id));
+  if (!b.items.every((x) => x && chans.has(String(x.channel)))) return res.status(400).json({ error: 'bad_channel' });
+  const old = topsCfg(info.id).items;
+  const items = b.items.map((x) => {
+    const id = /^[a-f0-9]{6,16}$/.test(String(x.id || '')) ? x.id : newId();
+    const o = old.find((y) => y.id === id);
+    return { id, channel: x.channel, type: x.type, period: x.period, role: x.role || null, time: x.time || '', last: o ? o.last : '' };
+  });
+  S(info.id).autotops = { enabled: b.enabled === true, items };
+  dirty = true;
+  res.json({ ok: true });
+}));
+const TOPS_P = { daily: 'التوب اليومي', weekly: 'التوب الأسبوعي', monthly: 'التوب الشهري' };
+const TOPS_T = { text: 'كتابي', voice: 'صوتي', mixed: 'مدمج' };
+async function topsSweep() {
+  const now = Date.now(), hm = hmFmt.format(now), today = dayKey(now), day = parts(now).day, wd = wdFmt.format(now);
+  for (const guild of client.guilds.cache.values()) {
+    const c = topsCfg(guild.id);
+    if (!c.enabled) continue;
+    for (const it of c.items) {
+      if (it.last === today || hm < (it.time || TOPS_DEF_TIME)) continue;
+      if (it.period === 'weekly' && wd !== 'Sun') continue;
+      if (it.period === 'monthly' && day !== '01') continue;
+      const ch = guild.channels.cache.get(it.channel);
+      if (!ch || typeof ch.send !== 'function') continue;
+      const raw = arr((S(guild.id).autotops || {}).items).find((x) => x.id === it.id);
+      if (raw) { raw.last = today; dirty = true; }
+      let rm = null;
+      if (it.role) { await guild.members.fetch().catch(() => {}); const r = guild.roles.cache.get(it.role); rm = new Set(r ? r.members.keys() : []); }
+      const keys = it.period === 'daily' ? daysBack(2).slice(0, 1) : it.period === 'weekly' ? daysBack(8).slice(0, 7) : daysBack(31).slice(0, 30);
+      const g = db.guilds[guild.id] || { members: {} };
+      const rows = Object.entries(g.members).map(([id, m]) => {
+        const w = sumDays(m, keys, 0), v = sumDays(m, keys, 1);
+        return [id, it.type === 'text' ? w : it.type === 'voice' ? v : w + v];
+      }).filter(([id, n]) => n > 0 && (!rm || rm.has(id))).sort((a, b) => b[1] - a[1]).slice(0, 10);
+      const val = (n) => (it.type === 'text' ? `${NF(n)} رسالة` : it.type === 'voice' ? fmtMinS(n) : `${NF(n)} نقطة`);
+      await ch.send({ embeds: [new EmbedBuilder().setColor(0xffffff).setTitle(`🏆 ${TOPS_P[it.period]} — ${TOPS_T[it.type]}`)
+        .setDescription(rows.length ? rows.map(([id, n], i) => `**${i + 1}.** <@${id}> — ${val(n)}`).join('\n') : 'لا توجد بيانات.').setTimestamp()],
+        allowedMentions: { parse: [] } }).catch(() => {});
+    }
+  }
+}
 app.listen(PORT, () => console.log(`OPS COIN site running on http://localhost:${PORT}`));
 
 async function onChannelSync(msg) {
@@ -8593,6 +8664,7 @@ function dashMain() {
     bolt: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>',
     save: '<path d="M5 3h11l3 3v15H5zM8 3v6h7V3M8 21v-7h8v7"/>',
     lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+    calendar: '<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 10h18"/>',
   };
   const root = document.documentElement;
   try {
@@ -9199,17 +9271,15 @@ loadCoin();
       };
 
       const saveBtn = el('button', { class: 'btn primary wide', type: 'button', disabled: locked, onclick: () => save() }, 'حفظ وتطبيق التغييرات مباشرة');
-      function save() {
-  if (!dirty) return;
-  dirty = false;
-  try {
-    fs.writeFileSync(DB_PATH + '.tmp', JSON.stringify(db));
-    fs.renameSync(DB_PATH + '.tmp', DB_PATH);
-  } catch (e) {
-    dirty = true;
-    console.error('DB save error:', e.message);
-  }
-}
+            async function save() {
+        const body = {};
+        if (pend.avatar !== undefined) body.avatar = pend.avatar;
+        if (pend.banner !== undefined) body.banner = pend.banner;
+        if (nickIn.value.trim() !== (d.nick || '')) body.nick = nickIn.value.trim();
+        if (!Object.keys(body).length) return fl.show('ما في تغيير للحفظ.', false);
+        try { await apiSend('POST', `/api/guild/${gid}/botprofile`, body); fl.show('تم تطبيق التغييرات ✅'); await load(); }
+        catch (e) { fl.show(errText(e), false); }
+      }
       async function reset() {
         if (!confirm('استعادة المظهر الافتراضي للبوت في هذا السيرفر؟')) return;
         try { await apiSend('POST', `/api/guild/${gid}/botprofile`, { reset: true }); fl.show('تمت استعادة المظهر الافتراضي'); await load(); }
@@ -9615,33 +9685,7 @@ loadCoin();
                 // الإجراءات
         w.actions.forEach((a) => { if (a.type === 'timeout' && !a.n) { a.n = a.mins || 10; a.u = 'm'; } });
         const actsBox = actionsEditor(w.actions, d.channels, false, () => {});
-        function drawActs() {
-          put(actsBox, w.actions.map((a, i) => {
-            const taken = new Set(w.actions.filter((_, j) => j !== i).map((y) => y.type));
-            const s = el('select', { class: 'sel full', 'aria-label': 'الإجراء' },
-              APR_ACT_L.filter(([v]) => v === a.type || !taken.has(v)).map(([v, t]) => el('option', { value: v, selected: v === a.type }, t)));
-            s.addEventListener('change', () => { a.type = s.value; drawActs(); });
-            let extra = null;
-            if (a.type === 'alert') {
-              extra = el('select', { class: 'sel full', 'aria-label': 'روم التنبيه' },
-                el('option', { value: '' }, '# اختر الروم...'),
-                d.channels.map((c) => el('option', { value: c.id, selected: c.id === a.channel }, '# ' + c.name)));
-              extra.addEventListener('change', () => { a.channel = extra.value || null; });
-            } else if (a.type === 'timeout') {
-              extra = el('input', { class: 'inp', type: 'number', min: 1, max: 40320, value: a.mins || 10, 'aria-label': 'مدة التايم اوت بالدقائق', placeholder: 'المدة بالدقائق' });
-              extra.addEventListener('input', () => { a.mins = parseInt(extra.value, 10) || 10; });
-            }
-            return el('div', { class: 'actrow2' },
-              el('button', {
-                class: 'btn ghost small danger delx', type: 'button', 'aria-label': 'حذف الإجراء', disabled: w.actions.length <= 1,
-                onclick: () => { w.actions.splice(i, 1); drawActs(); },
-              }, icon('trash')),
-              s, extra);
-          }));
-          addAct.disabled = w.actions.length >= APR_ACT_L.length;
-        }
-        drawActs();
-
+        
         const L = (t) => el('label', { class: 'flabel' }, t);
         const submit = () => {
           w.name = w.name.trim();
@@ -9694,8 +9738,16 @@ loadCoin();
       // ---------- التاب الثاني: الحماية العامة ----------
       const selF = (label, cur, opts, fn) => {
         const s = el('select', { class: 'sel full', disabled: ro, 'aria-label': label }, opts.map(([v, t]) => el('option', { value: v, selected: v === cur }, t)));
-        s.addEventListener('change', () => { fn(s.value); touch(); });
+        s.addEventListener('change', () => { fn(s.value); touch(); drawPane(); });
         return el('div', { class: 'stack tight' }, el('label', { class: 'flabel' }, label), s);
+      };      const TIMED = ['prison', 'mute'];
+      const timeIf = (obj, key = 'action') => {
+        if (!TIMED.includes(obj[key])) return null;
+        const n = el('input', { class: 'inp', type: 'number', min: 0, max: 9999, value: obj.timeN, disabled: ro, 'aria-label': 'المدة' });
+        n.addEventListener('input', () => { obj.timeN = Math.max(0, parseInt(n.value, 10) || 0); touch(); });
+        const u = el('select', { class: 'sel', disabled: ro, 'aria-label': 'الوحدة' }, UNIT_L.map(([v, t]) => el('option', { value: v, selected: v === obj.timeU }, t)));
+        u.addEventListener('change', () => { obj.timeU = u.value; touch(); });
+        return el('div', { class: 'stack tight' }, el('label', { class: 'flabel' }, 'المدة (0 = دائم)'), el('div', { class: 'actrow2' }, n, u));
       };
       const roleF = (label, obj) =>
         el('div', { class: 'stack tight' }, el('label', { class: 'flabel' }, label),
@@ -9763,8 +9815,7 @@ loadCoin();
       const genPane = () => {
         const ar = gp.antiRaid, al = gp.antiLinks, sp = gp.antiSpam;
         return [
-                   premLimit('emojiLimit', 'حماية تكرار الإيموجي (Emoji Limit)', 'الحد من إرسال عدد كبير من الإيموجيات في رسالة واحدة', 'أقصى عدد إيموجي في الرسالة الواحدة', 100),
-          premLimit('lineLimit', 'حماية الرسائل الطويلة والأسطر (Line Limit)', 'منع إفساد وتمديد الشات بالرسائل الطويلة', 'أقصى عدد أسطر في الرسالة الواحدة', 100),
+         
           el('section', { class: 'panelc' },
             trow(head('bolt', 'gold', 'مكافحة البوتات', 'منع البوتات غير المصرح بها'),
               tg(gp.antiBots.enabled, (v) => { gp.antiBots.enabled = v; drawPane(); }, 'gold')),
@@ -9772,6 +9823,7 @@ loadCoin();
               el('div', { class: 'sep' }),
               selF('الإجراء مع البوت', gp.antiBots.botAction, GPR_ACT_L.slice(0, 2), (v) => { gp.antiBots.botAction = v; }),
               selF('الإجراء مع المُضيف', gp.antiBots.adderAction, GPR_ACT_L, (v) => { gp.antiBots.adderAction = v; }),
+              timeIf(gp.antiBots, 'adderAction'),
               roleF('الرتب المستثناة (Exempt Roles)', gp.antiBots),
             ] : null),
 
@@ -9787,7 +9839,7 @@ loadCoin();
               el('div', { class: 'bhv' },
                 el('div', {}, el('b', {}, 'تطبيق إجراء على الحسابات'), el('small', { class: 'muted' }, 'اختياري — طرد أو حظر أو سجن الحسابات تلقائياً')),
                 tg(ar.actionOn, (v) => { ar.actionOn = v; drawPane(); }, 'red')),
-              ar.actionOn ? selF('الإجراء المتخذ', ar.action, GPR_ACT_L.filter(([v]) => ['kick', 'ban', 'prison'].includes(v)), (v) => { ar.action = v; }) : null,
+              ar.actionOn ? [selF('الإجراء المتخذ', ar.action, GPR_ACT_L.filter(([v]) => ['kick', 'ban', 'prison'].includes(v)), (v) => { ar.action = v; }), timeIf(ar)] : null,
             ] : null),
 
           el('section', { class: 'panelc' },
@@ -9796,6 +9848,7 @@ loadCoin();
             al.enabled ? [
               el('div', { class: 'sep' }),
               selF('الإجراء الإضافي', al.action, GPR_EXTRA_L, (v) => { al.action = v; }),
+              timeIf(al),
               roleF('الرتب المستثناة', al),
               chansF('الشاتات المستثناة', al),
               el('div', { class: 'sep' }),
@@ -9809,15 +9862,17 @@ loadCoin();
               tg(sp.enabled, (v) => { sp.enabled = v; drawPane(); }, 'orange')),
             sp.enabled ? [
               el('div', { class: 'sep' }),
-              el('div', { class: 'tbox' }, stepper('عدد التكرار المسموح', sp, 'repeat', 1, 20)),
+              el('div', { class: 'tbox' }, stepper('عدد التكرار المسموح', sp, 'repeat', 2, 20)),
               slider('نسبة تطابق الرسائل المتتالية', 'نسبة تشابه الرسالة مع الرسائل السابقة للكشف عن التحايل (مثلاً إضافة نقاط أو مسافات).', sp, 'sim', 50, 100),
               slider('نسبة تكرار الكلام الداخلي للرسالة', 'معدل تكرار نفس الجمل أو الكلمات داخل نفس الرسالة الواحدة (السبام الداخلي).', sp, 'inner', 30, 100),
               selF('الإجراء الإضافي', sp.action, GPR_EXTRA_L, (v) => { sp.action = v; }),
+              timeIf(sp),
               roleF('الرتب المستثناة العامة', sp),
               chansF('الشاتات المستثناة العامة من حماية السبام', sp),
               
             ] : null),
-
+          premLimit('emojiLimit', 'حماية تكرار الإيموجي (Emoji Limit)', 'الحد من إرسال عدد كبير من الإيموجيات في رسالة واحدة', 'أقصى عدد إيموجي في الرسالة الواحدة', 100),
+          premLimit('lineLimit', 'حماية الرسائل الطويلة والأسطر (Line Limit)', 'منع إفساد وتمديد الشات بالرسائل الطويلة', 'أقصى عدد أسطر في الرسالة الواحدة', 100),
           el('section', { class: 'panelc' },
             head('shield', 'red', 'حماية تحديثات السيرفر', 'منع التغييرات غير المصرح بها على اسم أو أيقونة السيرفر'),
             sw3('قفل اسم السيرفر', gp.serverUpdate, 'lockName'),
@@ -9831,6 +9886,7 @@ loadCoin();
             gp.webhook.enabled ? [
               el('div', { class: 'sep' }),
               selF('الإجراء المتخذ', gp.webhook.action, GPR_ACT_L, (v) => { gp.webhook.action = v; }),
+              timeIf(gp.webhook),
               roleF('الرتب المستثناة (Exempt Roles)', gp.webhook),
             ] : null),
 
@@ -9840,6 +9896,7 @@ loadCoin();
             sw3('منع حذف الرومات', gp.channels, 'lockDelete'),
             sw3('منع تعديل الرومات', gp.channels, 'lockEdit'),
             selF('الإجراء المتخذ', gp.channels.action, GPR_ACT_L, (v) => { gp.channels.action = v; }),
+            timeIf(gp.channels),
             roleF('الرتب المستثناة (Exempt Roles)', gp.channels)),
 
           el('section', { class: 'panelc' },
@@ -9848,6 +9905,7 @@ loadCoin();
             sw3('منع الحذف', gp.roles, 'lockDelete'),
             sw3('منع التعديل', gp.roles, 'lockEdit'),
             selF('الإجراء المتخذ', gp.roles.action, GPR_ACT_L, (v) => { gp.roles.action = v; }),
+            timeIf(gp.roles),
             roleF('الرتب المستثناة (Exempt Roles)', gp.roles)),
         ];
       };
@@ -10187,7 +10245,7 @@ loadCoin();
         for (const { c, node } of cards) node.classList.toggle('hidden', !!t && !(c.name.includes(t) || c.desc.includes(t) || c.aliases.some((x) => x.includes(t))));
       });
 
-      const saveBtn = el('button', { class: 'btn primary', type: 'button', onclick: async () => { saveBtn.disabled = true; await saveAll(); saveBtn.disabled = false; } }, 'حفظ الإعدادات');
+      const saveBtn = el('button', { class: 'btn primary', type: 'button', onclick: async () => { saveBtn.disabled = true; await saveAll(); saveBtn.disabled = false; } }, icon('save'), 'حفظ الإعدادات');
       const ignoreBtn = el('button', { class: 'btn ghost', type: 'button', onclick: ignore }, 'تجاهل');
       const sub = el('small', { class: 'sbsub' }, 'يوجد إعدادات جديدة بانتظار التأكيد');
       const bar = el('div', { class: 'savebar hidden', role: 'region', 'aria-live': 'polite' },
@@ -10385,7 +10443,7 @@ loadCoin();
   const clone = (o) => JSON.parse(JSON.stringify(o));
   // شريط "تغييرات غير محفوظة"
   function saveBar(isDirty, onSave, onIgnore) {
-    const saveBtn = el('button', { class: 'btn primary', type: 'button', onclick: async () => { saveBtn.disabled = true; try { await onSave(); } finally { saveBtn.disabled = false; } } }, 'حفظ الإعدادات');
+    const saveBtn = el('button', { class: 'btn primary', type: 'button', onclick: async () => { saveBtn.disabled = true; try { await onSave(); } finally { saveBtn.disabled = false; } } }, icon('save'), 'حفظ الإعدادات');
     const node = el('div', { class: 'savebar hidden', role: 'region', 'aria-live': 'polite' },
       el('div', { class: 'sbinfo' }, el('span', { class: 'sbico' }, icon('save')),
         el('div', {}, el('b', {}, 'تغييرات غير محفوظة ', el('i', { class: 'sbdot' })), el('small', { class: 'sbsub' }, 'يوجد إعدادات جديدة بانتظار التأكيد'))),
@@ -11503,11 +11561,22 @@ loadCoin();
         el('p', { class: 'fine start' }, 'لازم تكون رتبة البوت أعلى من الرتب المختارة. الرتب اللي فيها صلاحيات إدارية أو رتب البوتات المدارة (managed) ما بتنقبل.'),
       ];
 
-      const activityPane = () => [
+            const activityPane = () => [
         el('div', { class: 'lockbox' },
-          el('div', { class: 'phd' }, icon('crown', 'goldc'), el('h2', {}, d.guildPremium ? 'مزامنة الألعاب قيد التجهيز 🚧' : 'هذه الميزة تتطلب اشتراك بريميوم نشط')),
-          el('p', { class: 'muted' }, 'منح رتبة للعضو تلقائياً حسب اللعبة اللي بلعبها.'),
-          d.guildPremium ? null : el('a', { class: 'btn primary small', href: `#/g/${gid}/premium` }, 'ترقية إلى البريميوم')),
+          el('div', { class: 'rowbar' },
+            el('div', { class: 'phd' }, el('span', { class: 'hbox gold' }, icon('crown')),
+              el('div', {}, el('h2', {}, 'ميزة مزامنة الألعاب حصرية بـ البريميوم'), el('small', { class: 'warnt' }, 'يتطلب هذا النظام اشتراك بريميوم نشط ليعمل في البوت والديسكورد.'))),
+            d.guildPremium ? null : el('a', { class: 'btn primary small', href: `#/g/${gid}/premium` }, icon('crown'), 'ترقية إلى البريميوم')),
+          el('div', { class: 'sep' }),
+          el('div', { class: 'infobox' }, el('b', {}, '💡 ما هي مزامنة الألعاب (Game Activity Sync)؟'),
+            el('ul', {},
+              el('li', {}, 'منح الأعضاء رتباً خاصة باللعبة تلقائياً فور بدء تشغيلهم لألعاب محددة (مثل FiveM أو Valorant أو GTA).'),
+              el('li', {}, 'سحب رتبة اللعبة وتوجيه العضو أو طرده من الروم الصوتي المخصص عند إغلاقه للعبة.')))),
+        el('section', { class: 'panelc' }, el('div', { class: 'trow' },
+          el('div', { class: 'phd' }, el('span', { class: 'hbox gold' }, icon('grid')),
+            el('div', {}, el('div', { class: 'tline' }, el('h2', {}, 'تفعيل مزامنة النشاط'), el('span', { class: 'pbadge' }, icon('lock'), 'مغلقة بريميوم')),
+              el('small', { class: 'muted' }, 'منح رتب الألعاب وتنظيم الرومات'))),
+          el('span', { class: 'lockedsw' }, icon('lock')))),
       ];
 
       const drawPane = () => put(pane, tab === 'join' ? joinPane() : activityPane());
@@ -13423,6 +13492,7 @@ const getLists = async () => {
       { id: 'autoreply', label: 'الرد التلقائي', ic: 'chat', href: `${base}/autoreply` },
       { id: 'autoline', label: 'الخط التلقائي', ic: 'image', href: `${base}/autoline` },
             { id: 'autoreact', label: 'التفاعل التلقائي', ic: 'smileplus', href: `${base}/autoreact` },
+      { id: 'autotops', label: 'نظام التوبات', ic: 'trophy', href: `${base}/autotops` },
       { id: 'colorsys', label: 'نظام الألوان', ic: 'palette', children: [
         { id: 'colors', label: 'إعدادات الألوان', href: `${base}/colors` },
         { id: 'cmd-colors', label: 'أوامر الألوان', href: `${base}/cmd-colors` },
@@ -13447,9 +13517,10 @@ const getLists = async () => {
     const inside = it.children.some((c) => c.id === r.page);
     let open = secOpen[it.id] === undefined ? inside : secOpen[it.id];
     const chev = icon('chevron', 'chev' + (open ? ' up' : ''));
+    const gi = icon(it.ic, 'gico' + (open ? ' flip' : ''));
     const head = el('button', {
       type: 'button', class: 'mitem mhead' + (inside ? ' active' : ''), 'aria-expanded': String(open),
-    }, icon(it.ic), el('span', {}, it.label), chev);
+    }, gi, el('span', {}, it.label), chev);
     const sub = el('div', { class: 'msub' }, it.children.map((c) =>
       el('a', { class: 'msubitem' + (c.ic ? ' hasic' : '') + (r.page === c.id ? ' active' : ''), href: c.href, onclick: () => document.body.classList.remove('open') }, c.ic ? icon(c.ic) : null, c.label)));
     const wrap = el('div', { class: 'msubwrap' + (open ? ' open' : '') }, sub);
@@ -13458,6 +13529,7 @@ const getLists = async () => {
       secOpen[it.id] = open;
       wrap.classList.toggle('open', open);
       chev.classList.toggle('up', open);
+      gi.classList.toggle('flip', open);
       head.setAttribute('aria-expanded', String(open));
     });
     return el('div', { class: 'mgroup' }, head, wrap);
@@ -14027,7 +14099,8 @@ const getLists = async () => {
         return pg && pg.premium ? pageApply(r, true) : premPage(r.gid, 'APPLICATIONS', 'نماذج التقديم');
       }
             case 'autoline': return pageAutoLine(r);
-                  case 'autoreact': return pageAutoReact(r);      
+                  case 'autoreact': return pageAutoReact(r);
+      case 'autotops': return pageAutoTops(r);      
       case 'colors': return pageColors(r);
       default: return r.page.startsWith('cmd-') ? pageCommands({ gid: r.gid, cat: r.page.slice(4) }) : pageGuild(r.gid);
     }
@@ -14279,6 +14352,69 @@ const getLists = async () => {
     put(box, el('p', { class: 'muted center' }, 'جاري التحميل...'));
     load();
     return box;
+  }  function pageAutoTops(r) {
+    const gid = r.gid;
+    const box = el('div', { class: 'page' });
+    const fl = flasher();
+    let d = null, cfg = null, base = null, bar = null, adding = null;
+    const dirty = () => JSON.stringify(cfg) !== JSON.stringify(base);
+    const touch = () => bar && bar.refresh();
+    const TYPES = [['text', 'كتابي (أكثر الأعضاء كتابة)'], ['voice', 'صوتي (أكثر الأعضاء تفاعلاً صوتياً)'], ['mixed', 'مدمج (صوتي + كتابي)']];
+    const PERIODS = [['daily', 'يومي (التوب اليومي)'], ['weekly', 'أسبوعي (التوب الأسبوعي)'], ['monthly', 'شهري (التوب الشهري)']];
+    const lab = (l, v) => (l.find((x) => x[0] === v) || [])[1] || v;
+    async function load() {
+      try { d = await api(`/api/guild/${gid}/autotops`); } catch (e) { put(box, errorBox(load)); return; }
+      cfg = clone(d.cfg); base = clone(d.cfg); build();
+    }
+    async function save() {
+      try { await apiSend('PUT', `/api/guild/${gid}/autotops`, { cfg }); base = clone(cfg); fl.show('تم حفظ الإعدادات ✅'); bar.refresh(); }
+      catch (e) { fl.show(errText(e), false); }
+    }
+    function build() {
+      const ro = !d.canManage;
+      const list = el('div', { class: 'stack' }), form = el('div', {});
+      const chName = (id) => (d.channels.find((c) => c.id === id) || { name: '؟' }).name;
+      const sel = (opts, cur, fn, label) => { const s = el('select', { class: 'sel full', 'aria-label': label }, opts.map(([v, t]) => el('option', { value: v, selected: v === cur }, t))); s.addEventListener('change', () => fn(s.value)); return s; };
+      const drawList = () => put(list, cfg.items.length ? cfg.items.map((x, i) => el('div', { class: 'rwcard' },
+        el('div', { class: 'rowbar' }, el('b', {}, '# ' + chName(x.channel)),
+          el('button', { class: 'btn ghost small danger', type: 'button', disabled: ro, 'aria-label': 'حذف', onclick: () => { cfg.items.splice(i, 1); drawList(); drawForm(); touch(); } }, icon('trash'))),
+        el('div', { class: 'btnrow' }, el('span', { class: 'mbadge' }, lab(TYPES, x.type)), el('span', { class: 'mbadge' }, lab(PERIODS, x.period)),
+          el('span', { class: 'mbadge' }, x.time || d.defTime), x.role ? el('span', { class: 'mbadge' }, '@ ' + ((d.roles.find((o) => o.id === x.role) || {}).name || '')) : null)))
+        : el('div', { class: 'empty boxed' }, icon('calendar'), el('p', {}, 'لا توجد جداول إرسال حالية')));
+      function drawForm() {
+        if (!adding) return put(form, el('button', { class: 'btn primary small', type: 'button', disabled: ro || cfg.items.length >= d.max, onclick: () => { adding = { id: rndId(), channel: '', type: 'text', period: 'daily', role: '', time: '' }; drawForm(); } }, icon('plus'), 'إضافة جدولة جديدة'));
+        const a = adding;
+        const time = el('input', { class: 'inp', type: 'time', value: a.time, disabled: !d.guildPremium, 'aria-label': 'وقت الإرسال' });
+        time.addEventListener('input', () => { a.time = time.value; });
+        put(form, el('section', { class: 'panelc' },
+          el('label', { class: 'flabel' }, 'القناة'), sel([['', '# اختر القناة...'], ...d.channels.map((c) => [c.id, '# ' + c.name])], a.channel, (v) => { a.channel = v; }, 'القناة'),
+          el('label', { class: 'flabel' }, 'النوع'), sel(TYPES, a.type, (v) => { a.type = v; }, 'النوع'),
+          el('label', { class: 'flabel' }, 'الفترة'), sel(PERIODS, a.period, (v) => { a.period = v; }, 'الفترة'),
+          el('label', { class: 'flabel' }, 'الرتبة المخصصة (اختياري)'), sel([['', 'كل الأعضاء (بدون تحديد)'], ...d.roles.map((o) => [o.id, '@ ' + o.name])], a.role, (v) => { a.role = v; }, 'الرتبة'),
+          el('label', { class: 'flabel' }, `وقت الإرسال (الافتراضي العام: ${d.defTime})`), time,
+          d.guildPremium ? null : el('a', { class: 'warnt', href: `#/g/${gid}/premium` }, 'تخصيص وقت الإرسال ميزة بريميوم — ترقية'),
+          el('div', { class: 'btnrow' },
+            el('button', { class: 'btn primary small', type: 'button', onclick: () => {
+              if (!a.channel) return fl.show('اختر القناة أولاً.', false);
+              cfg.items.push({ ...a, role: a.role || null }); adding = null; drawList(); drawForm(); touch();
+            } }, icon('plus'), 'تأكيد الإضافة'),
+            el('button', { class: 'btn ghost small', type: 'button', onclick: () => { adding = null; drawForm(); } }, 'إلغاء'))));
+      }
+      const sw = toggle(cfg.enabled, (v) => { cfg.enabled = v; touch(); }, ro); sw.classList.add('green');
+      bar = saveBar(dirty, save, () => { cfg = clone(base); adding = null; build(); });
+      put(box,
+        el('p', { class: 'eyebrow' }, 'AUTO TOPS'), el('h1', { class: 'greet' }, 'نظام التوبات'),
+        el('p', { class: 'lead' }, 'جدولة إرسال لوائح المتصدرين تلقائياً — يومياً أو أسبوعياً أو شهرياً.'),
+        fl, ro ? el('div', { class: 'notice show' }, 'تحتاج صلاحية إدارة السيرفر.') : null,
+        el('section', { class: 'panelc masterc' }, el('div', { class: 'trow' },
+          el('div', { class: 'mrow' }, el('span', { class: 'mico' }, icon('calendar')), el('div', {}, el('h2', {}, 'تفعيل نظام التوبات التلقائية'), el('small', { class: 'muted' }, 'الجدولة المتوقفة لن ترسل التوبات'))), sw)),
+        el('div', { class: 'rowbar' }, el('h2', {}, 'جداول الإرسال ', el('span', { class: 'pbadge' }, `${d.guildPremium ? 'الحد' : 'الحد المجاني'}: (${cfg.items.length}/${d.max})`)), form),
+        list, bar.node);
+      drawList(); drawForm(); bar.refresh();
+    }
+    put(box, el('p', { class: 'muted center' }, 'جاري التحميل...'));
+    load();
+    return box;
   }
   function pageColors(r) {
     const gid = r.gid;
@@ -14507,6 +14643,13 @@ const getLists = async () => {
     $('#scrim').addEventListener('click', () => document.body.classList.remove('open'));
     document.addEventListener('keydown', (e) => e.key === 'Escape' && document.body.classList.remove('open'));
     window.addEventListener('hashchange', route);
+    document.addEventListener('click', (e) => {
+      const l = e.target.closest && e.target.closest('.lockedsw');
+      if (!l) return;
+      e.stopPropagation();
+      const m = /^#\/g\/([^/]+)/.exec(location.hash);
+      location.hash = m ? `#/g/${m[1]}/premium` : '#/premium';
+    }, true);
     route();
   })();
 }
@@ -15602,6 +15745,10 @@ body.has-savebar .dmain { padding-bottom: 150px; }
 .mitem .ico { width: 20px; height: 20px; }
 .msubitem { padding: 9px 12px; font-size: .88rem; }
 .logout { padding: 14px 18px; font-size: .9rem; }
+.lockedsw { cursor: pointer; }
+.gico { transition: transform .3s ease; }
+.gico.flip { transform: rotate(180deg); }
+.sbbtns .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 `;
 
 
