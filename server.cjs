@@ -13617,7 +13617,6 @@ const getLists = async () => {
       { id: 'levels', label: 'نظام المستويات', ic: 'trend', href: `${base}/levels` },
       { id: 'chsync', label: 'تنظيم القنوات', ic: 'broom', href: `${base}/chsync` },
       { id: 'tempvoice', label: 'الروم المؤقت', ic: 'mic', href: `${base}/tempvoice` },
-            { id: 'payments', label: 'طرق الدفع', ic: 'coins', href: `${base}/payments` },
       { id: 'ticketsys', label: 'التذاكر', ic: 'ticket', children: [
   { id: 'tickets', label: 'إعدادات التذاكر', href: `${base}/tickets` },
   { id: 'tktlog', label: 'سجل التذاكر', ic: 'doc', href: `${base}/tktlog` },
@@ -14715,6 +14714,7 @@ const getLists = async () => {
       head = [el('span', { class: 'hav' }, g ? guildIcon(g, 52) : null), el('span', {}, g ? g.name : 'السيرفر')];
       items = [
         { id: 'overview', label: 'نظرة عامة', ic: 'grid', href: `#/g/${r.gid}` },
+        { id: 'payments', label: 'طرق الدفع', ic: 'coins', href: `#/g/${r.gid}/payments` },
         { id: 'premium', label: 'البريميوم', ic: 'crown', href: `#/g/${r.gid}/premium`, badge: g && g.premium ? 'مفعّل' : 'غير مفعّل' },
       ];
     } else {
