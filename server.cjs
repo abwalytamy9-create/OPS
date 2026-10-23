@@ -700,11 +700,18 @@ app.get('/api/overview', auth, (req, res) => {
   const s = userStats(uid);
   const ranking = globalRanking();
   const idx = ranking.findIndex(([id]) => id === uid);
+  let owner = null;
+  if (OWNER_IDS.includes(uid) && client && botReady) {
+    let users = 0;
+    for (const g of client.guilds.cache.values()) users += g.memberCount || 0;
+    owner = { users, servers: client.guilds.cache.size };
+  }
   res.json({
     rank: idx < 0 ? null : idx + 1,
     points: { total: s.w.total + s.v.total + s.b, today: s.w.day + s.v.day },
     written: s.w,
     voice: s.v,
+    owner,
   });
 });
 
@@ -8673,7 +8680,9 @@ for (const kid of kids.flat(Infinity)) {
         el('div', { class: 'cards3' },
           statCard('crown', d.rank ? '#' + NF(d.rank) : '—', 'ترتيبك العالمي'),
           statCard('star', NF(d.points.total), 'النقاط الكلية'),
-          statCard('calendar', NF(d.points.today), 'نقاط اليوم')),
+          statCard('calendar', NF(d.points.today), 'نقاط اليوم'),
+          d.owner ? statCard('users', NF(d.owner.users), 'مستخدمي سيرفرات البوت (خاص بالمالك)') : null,
+          d.owner ? statCard('server', NF(d.owner.servers), 'عدد السيرفرات (خاص بالمالك)') : null),
         activityCard('pen', 'النشاط الكتابي', d.written, false),
         activityCard('mic', 'النشاط الصوتي', d.voice, true),
         el('section', { class: 'panelc upsell' },
