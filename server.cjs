@@ -8302,7 +8302,18 @@ function tkAiSystem(gid) {
       (al.length ? ` | اختصارات: ${al.join(', ')}` : '') +
       (c.perm ? ` | يحتاج صلاحية: ${c.perm}` : '');
   });
-  return TK_AI_BASE + '\n\nقائمة الاوامر الكاملة:\n' + lines.join('\n');
+  let site = '';
+  try { site = new URL(REDIRECT_URI).origin; } catch (_) {}
+  const links = [
+    site ? `رابط الموقع ولوحة التحكم (الداشبورد): ${site}/dashboard` : '',
+    site ? `الصفحة الرئيسية للموقع: ${site}` : '',
+    SUPPORT_URL ? `رابط سيرفر الدعم الفني: ${SUPPORT_URL}` : '',
+    typeof INVITE_URL === 'string' ? `رابط دعوة البوت لسيرفر جديد: ${INVITE_URL}` : '',
+  ].filter(Boolean).join('\n');
+  return TK_AI_BASE +
+    '\n\nالروابط الرسمية (استخدمها كما هي بالضبط ولا تخترع روابط غيرها):\n' + links +
+    '\nاذا سأل العضو عن الموقع او الداشبورد او لوحة التحكم او رابط الدخول او كيف يضيف البوت، اعطه الرابط المناسب من القائمة فوق مباشرة مع شرح بسيط، وقله يسجل دخول بحساب ديسكورد ويختار السيرفر.' +
+    '\n\nقائمة الاوامر الكاملة:\n' + lines.join('\n');
 }
 const AI_CHANNELS = ['1558190110112227468'];
 async function onTicketAI(msg) {
@@ -8312,6 +8323,14 @@ async function onTicketAI(msg) {
   const room = st && st.rooms && st.rooms[msg.channelId];
   if (!room || room.closed) return;
   if (msg.author.id !== room.owner) return;
+    if (/(موقع|داشبورد|لوحة\s*التحكم|dashboard|website|رابط)/i.test(msg.content) && !/(تذكر|ticket)/i.test(msg.content)) {
+    let site = '';
+    try { site = new URL(REDIRECT_URI).origin; } catch (_) {}
+    if (site) {
+      msg.reply({ content: `🌐 **لوحة التحكم:** ${site}/dashboard\nسجّل دخول بحساب ديسكورد واختر سيرفرك.`, allowedMentions: { parse: [], repliedUser: false } }).catch(() => {});
+      return;
+    }
+  }
   if (tkAiBusy.has(msg.channelId)) return;
   tkAiBusy.add(msg.channelId);
   try {
