@@ -703,8 +703,13 @@ app.get('/api/overview', auth, (req, res) => {
   let owner = null;
   if (OWNER_IDS.includes(uid) && client && botReady) {
     let users = 0;
-    for (const g of client.guilds.cache.values()) users += g.memberCount || 0;
-    owner = { users, servers: client.guilds.cache.size };
+    const list = [];
+    for (const g of client.guilds.cache.values()) {
+      users += g.memberCount || 0;
+      list.push({ id: g.id, name: g.name, icon: g.icon, members: g.memberCount || 0, premium: isPremium(g.id) });
+    }
+    list.sort((a, b) => b.members - a.members);
+    owner = { users, servers: client.guilds.cache.size, list };
   }
   res.json({
     rank: idx < 0 ? null : idx + 1,
@@ -8681,8 +8686,16 @@ for (const kid of kids.flat(Infinity)) {
           statCard('crown', d.rank ? '#' + NF(d.rank) : '—', 'ترتيبك العالمي'),
           statCard('star', NF(d.points.total), 'النقاط الكلية'),
           statCard('calendar', NF(d.points.today), 'نقاط اليوم'),
-          d.owner ? statCard('users', NF(d.owner.users), 'مستخدمي سيرفرات البوت (خاص بالمالك)') : null,
+          d.owner ? statCard('users', NF(d.owner.users), 'إجمالي أعضاء السيرفرات (خاص بالمالك)') : null,
           d.owner ? statCard('server', NF(d.owner.servers), 'عدد السيرفرات (خاص بالمالك)') : null),
+        d.owner ? el('section', { class: 'panelc' },
+          el('div', { class: 'phd' }, el('span', { class: 'hbox gold' }, icon('server')),
+            el('div', {}, el('h2', {}, 'السيرفرات اللي فيها البوت'), el('small', { class: 'muted' }, 'خاص بالمالك فقط'))),
+          d.owner.list.map((s) => el('div', { class: 'lrow' },
+            el('span', { class: 'sgi' }, guildIcon(s, 40)),
+            el('span', { class: 'nm' }, s.name, el('small', { class: 'muted mono' }, s.id)),
+            s.premium ? el('span', { class: 'pbadge' }, icon('crown'), 'بريميوم') : null,
+            el('b', {}, NF(s.members) + ' عضو')))) : null,
         activityCard('pen', 'النشاط الكتابي', d.written, false),
         activityCard('mic', 'النشاط الصوتي', d.voice, true),
         el('section', { class: 'panelc upsell' },
