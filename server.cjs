@@ -283,6 +283,31 @@ function startBot(withMembers = true) {
   if (withMembers) intents.push(GatewayIntentBits.GuildMembers, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildPresences);
   intents.push(GatewayIntentBits.GuildWebhooks, GatewayIntentBits.GuildModeration, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.GuildExpressions || GatewayIntentBits.GuildEmojisAndStickers);
   client = new Client({ intents, partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User] });
+    {
+    const origReq = client.rest.request.bind(client.rest);
+    const KEYS = new Set(['content', 'title', 'description', 'name', 'value', 'text']);
+    const walk = (o, key) => {
+      if (typeof o === 'string') return KEYS.has(key) ? applyEmo(o) : o;
+      if (Array.isArray(o)) return o.map((x) => walk(x, key));
+      if (!o || typeof o !== 'object' || Buffer.isBuffer(o)) return o;
+      const out = {};
+      for (const [k, v] of Object.entries(o)) {
+        if (k === 'emoji' && v && typeof v === 'object' && typeof v.name === 'string' && !v.id) {
+          const r = applyEmo(v.name), m = /^<(a?):(\w{1,32}):(\d{15,25})>$/.exec(r);
+          out[k] = m ? { id: m[3], name: m[2], animated: !!m[1] } : r ? { name: r } : undefined;
+        } else out[k] = walk(v, k);
+      }
+      return out;
+    };
+    client.rest.request = (o) => {
+      try {
+        if (o && o.body && typeof o.body === 'object' &&
+            /\/(messages|callback)(\/|$)|\/webhooks\/\d+\//.test(String(o.fullRoute))) o = { ...o, body: walk(o.body) };
+      } catch (_) {}
+      return origReq(o);
+    };
+    console.log('[emoji-hook] active');
+  }
   attachLogs(client);
   attachGuard(client);
     attachGenProt(client);
@@ -2724,7 +2749,24 @@ const CMD_EMO_ITEMS = [
   ['doc', 'معلومات العقوبة', '📄'],
     ['pg_prev', 'بوتات: زر الصفحة السابقة', '◀️'],
   ['pg_next', 'بوتات: زر الصفحة التالية', '▶️'],
-];
+];// يضيف تلقائياً كل إيموجي موجود بكود البوت لقائمة الإيموجيات
+{
+  const norm = (s) => s.replace(/\uFE0F/g, '');
+  let src = '';
+  try { src = fs.readFileSync(__filename, 'utf8'); } catch (_) {}
+  src = src.slice(0, src.indexOf('function clientMain()'))
+    .split('\n').filter((l) => !/console\.(log|warn|error)/.test(l)).join('\n')
+    .replace(/^\s*\/\/.*$/gm, '');
+  const have = new Set(CMD_EMO_ITEMS.map((x) => norm(x[2])));
+  const found = src.match(/\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*/gu) || [];
+  const cnt = new Map();
+  for (const e of found) cnt.set(e, (cnt.get(e) || 0) + 1);
+  for (const [e, n] of cnt) {
+    if (have.has(norm(e))) continue;
+    have.add(norm(e));
+    CMD_EMO_ITEMS.push(['x_' + [...norm(e)].map((c) => c.codePointAt(0).toString(16)).join('_'), `${e} (مستخدم ${n} مرة)`, e]);
+  }
+}
 function cmdEmojis() {
   const src = db.cmdEmojis && typeof db.cmdEmojis === 'object' ? db.cmdEmojis : {};
   const o = {};
@@ -2733,7 +2775,12 @@ function cmdEmojis() {
 }
 function applyEmo(text) {
   const cur = cmdEmojis();
-  const map = new Map(CMD_EMO_ITEMS.filter(([k]) => k !== 'gift' && k !== 'vipgift' && k !== 'clearwarn' && k !== 'clearlog' && !k.startsWith('inf_')).map(([k, , def]) => [def, cur[k]]));
+  const map = new Map();
+  for (const [k, , def] of CMD_EMO_ITEMS) {
+    if (['gift', 'vipgift', 'clearwarn', 'clearlog'].includes(k) || k.startsWith('inf_')) continue;
+    const bare = def.replace(/\uFE0F/g, '');
+    for (const v of new Set([def, bare, bare + '\uFE0F'])) if (!map.has(v)) map.set(v, cur[k]);
+  }
   const re = new RegExp([...map.keys()].sort((a, b) => b.length - a.length)
     .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g');
   return String(text).replace(re, (m) => map.get(m));
@@ -7508,7 +7555,11 @@ function actsClean(list, chans) {
     }
     return o;
   }).filter(Boolean);
-}
+}const tmo = (o) => {
+  const n = parseInt(o && o.timeN, 10), u = o && o.timeU;
+  const uu = has(PEN_UNITS, u) ? u : 'm';
+  return { timeN: n >= 0 && n * PEN_UNITS[uu] <= PEN_MAX ? n : 10, timeU: uu };
+};
 function gprClean(b, gid) {
   b = b && typeof b === 'object' ? b : {};
   const roles = new Set(roleList(gid).map((r) => r.id));
@@ -7797,6 +7848,56 @@ async function onWebhooksUpdate(ch) {
   const res = mem ? await gprPunish(guild, mem, c.action, 'OPS: حماية الويب هوك', penTime(c)) : { done: false, text: 'العضو غير موجود بالسيرفر' };
   L(guild, 'channels', '🛡️ حماية الويب هوك',
     `**المنفذ:** <@${uid}>\n**الروم:** <#${ch.id}>\n**حذف الويب هوك:** ${removed ? '✅ تم' : '⚠️ ما قدرت'}\n**الإجراء:** ${res.done ? '✅' : '⚠️'} ${res.text}`);
+}// ---------- مكافحة البوتات ----------
+async function gprBots(m) {
+  const g = m.guild;
+  if (!m.user.bot || m.id === client.user.id || !gprRawOn(g.id, 'antiBots')) return;
+  const c = gprStored(g.id).antiBots;
+  const e = await execOf(g, AuditLogEvent.BotAdd, m.id);
+  const uid = e && e.user ? e.user.id : null;
+  if (uid && (uid === g.ownerId || uid === client.user.id || smartCfg(g.id).whitelist.includes(uid))) return;
+  const adder = uid ? await g.members.fetch(uid).catch(() => null) : null;
+  if (adder && arr(c.exemptRoles).some((r) => adder.roles.cache.has(r))) return;
+  const bres = await (c.botAction === 'ban' ? m.ban({ reason: 'OPS: مكافحة البوتات' }) : m.kick('OPS: مكافحة البوتات')).then(() => true, () => false);
+  const ares = adder ? await gprPunish(g, adder, c.adderAction, 'OPS: مكافحة البوتات', penTime(c)) : { done: false, text: 'ما لقيت مين أضافه' };
+  L(g, 'bots', '🛡️ مكافحة البوتات',
+    `**البوت:** ${who(m.user)}\n**المُضيف:** ${uid ? `<@${uid}>` : 'غير معروف'}\n**إجراء البوت:** ${bres ? '✅ تم' : '⚠️ فشل'}\n**إجراء المُضيف:** ${ares.done ? '✅' : '⚠️'} ${ares.text}`);
+}
+
+// ---------- حماية اسم وأيقونة السيرفر ----------
+async function gprGuildUpdate(o, n) {
+  const raw = ((db.settings[n.id] || {}).genprot || {}).serverUpdate;
+  if (!raw) return;
+  const nameCh = raw.lockName === true && o.name !== n.name;
+  const iconCh = raw.lockIcon === true && o.icon !== n.icon;
+  if (!nameCh && !iconCh) return;
+  const c = gprStored(n.id).serverUpdate;
+  const e = await execOf(n, AuditLogEvent.GuildUpdate, n.id);
+  if (!e || !e.user) return;
+  const uid = e.user.id;
+  if (uid === client.user.id || uid === n.ownerId || smartCfg(n.id).whitelist.includes(uid)) return;
+  const mem = await n.members.fetch(uid).catch(() => null);
+  if (mem && arr(c.exemptRoles).some((r) => mem.roles.cache.has(r))) return;
+  if (nameCh) await n.setName(o.name, 'OPS: حماية السيرفر').catch(() => {});
+  if (iconCh) await n.setIcon(o.iconURL({ size: 1024, extension: 'png' }), 'OPS: حماية السيرفر').catch(() => {});
+  const res = mem ? await gprPunish(n, mem, c.action, 'OPS: حماية السيرفر', penTime(c)) : { done: false, text: 'العضو غير موجود' };
+  L(n, 'serverupdate', '🛡️ حماية تحديثات السيرفر', `**المنفذ:** <@${uid}>\n**الإجراء:** ${res.done ? '✅' : '⚠️'} ${res.text}`);
+}
+
+// ---------- حماية الرومات ----------
+async function gprChan(guild, flag, type, ch, revert, title) {
+  const raw = ((db.settings[guild.id] || {}).genprot || {}).channels;
+  if (!raw || raw[flag] !== true) return;
+  const c = gprStored(guild.id).channels;
+  const e = await execOf(guild, type, ch.id);
+  if (!e || !e.user) return;
+  const uid = e.user.id;
+  if (uid === client.user.id || uid === guild.ownerId || smartCfg(guild.id).whitelist.includes(uid)) return;
+  const mem = await guild.members.fetch(uid).catch(() => null);
+  if (mem && arr(c.exemptRoles).some((r) => mem.roles.cache.has(r))) return;
+  await revert().catch(() => {});
+  const res = mem ? await gprPunish(guild, mem, c.action, 'OPS: حماية الرومات', penTime(c)) : { done: false, text: 'العضو غير موجود' };
+  L(guild, 'channels', title, `**المنفذ:** <@${uid}>\n**الروم:** \`${cut(ch.name, 80)}\`\n**الإجراء:** ${res.done ? '✅' : '⚠️'} ${res.text}`);
 }
 function attachGenProt(client) {
   if (!client) return;
@@ -7806,6 +7907,17 @@ function attachGenProt(client) {
   on(Events.MessageCreate, onGenProtMsg);
   on(Events.GuildMemberAdd, onRaidJoin);
     on(Events.WebhooksUpdate, onWebhooksUpdate);
+      on(Events.GuildMemberAdd, gprBots);
+  on(Events.GuildUpdate, gprGuildUpdate);
+  on(Events.ChannelCreate, (c) => c.guild && gprChan(c.guild, 'lockCreate', AuditLogEvent.ChannelCreate, c, () => c.delete('OPS: حماية الرومات'), '🛡️ حماية الرومات: منع إنشاء'));
+  on(Events.ChannelDelete, (c) => c.guild && gprChan(c.guild, 'lockDelete', AuditLogEvent.ChannelDelete, c, () => c.guild.channels.create({
+    name: c.name, type: c.type, parent: c.parentId, topic: c.topic || undefined, nsfw: c.nsfw, position: c.rawPosition,
+    permissionOverwrites: [...c.permissionOverwrites.cache.values()].map((p) => ({ id: p.id, type: p.type, allow: p.allow, deny: p.deny })),
+  }), '🛡️ حماية الرومات: منع حذف'));
+  on(Events.ChannelUpdate, (o, n) => {
+    if (!n.guild || (o.name === n.name && o.parentId === n.parentId && o.topic === n.topic)) return;
+    return gprChan(n.guild, 'lockEdit', AuditLogEvent.ChannelUpdate, n, () => n.edit({ name: o.name, parent: o.parentId, topic: o.topic || undefined, reason: 'OPS: حماية الرومات' }), '🛡️ حماية الرومات: منع تعديل');
+  });
   on(Events.GuildRoleCreate, (r) => gprRole(r.guild, 'lockCreate', AuditLogEvent.RoleCreate, r, () => r.delete('OPS: حماية الرتب'), '🛡️ حماية الرتب: منع إنشاء'));
   on(Events.GuildRoleDelete, (r) => gprRole(r.guild, 'lockDelete', AuditLogEvent.RoleDelete, r, () => r.guild.roles.create({
     name: r.name, color: r.color, permissions: r.permissions, hoist: r.hoist, mentionable: r.mentionable, position: r.position, reason: 'OPS: حماية الرتب',
@@ -9034,6 +9146,9 @@ loadCoin();
         el('div', { class: 'phd' }, el('span', { class: 'bar' }), el('h2', {}, 'اختر الخطة')),
         el('div', { class: 'plans' }, planM, planY),
         el('div', { class: 'totalrow' }, el('span', {}, 'إجمالي السعر للباقة المختارة:'), total),
+                el('div', { class: 'btnrow' }, ['PayPal', 'Visa'].map((n) =>
+          el('button', { class: 'btn ghost small', type: 'button', onclick: () => fl2(`الدفع عبر ${n} قيد التجهيز 🚧`) },
+            icon('card'), n, el('span', { class: 'pbadge' }, 'قيد التجهيز')))),
         el('a', { class: 'btn primary wide', href: me.supportUrl, target: '_blank', rel: 'noopener' }, 'فتح تذكرة الشراء بالدسكورد'),
         el('p', { class: 'fine' }, 'بالنقر على «فتح تذكرة الشراء» فإنك توافق على شروط الاستخدام، شروط الاسترجاع وسياسة الخصوصية.')),
       el('section', { class: 'panelc' },
@@ -13502,6 +13617,7 @@ const getLists = async () => {
       { id: 'levels', label: 'نظام المستويات', ic: 'trend', href: `${base}/levels` },
       { id: 'chsync', label: 'تنظيم القنوات', ic: 'broom', href: `${base}/chsync` },
       { id: 'tempvoice', label: 'الروم المؤقت', ic: 'mic', href: `${base}/tempvoice` },
+            { id: 'payments', label: 'طرق الدفع', ic: 'coins', href: `${base}/payments` },
       { id: 'ticketsys', label: 'التذاكر', ic: 'ticket', children: [
   { id: 'tickets', label: 'إعدادات التذاكر', href: `${base}/tickets` },
   { id: 'tktlog', label: 'سجل التذاكر', ic: 'doc', href: `${base}/tktlog` },
@@ -13789,6 +13905,10 @@ const getLists = async () => {
   }  // =====================  أيقونات جديدة  =====================
   Object.assign(ICONS, {
     megaphone: '<path d="M3 11v2a1 1 0 0 0 1 1h3l8 4V6L7 10H4a1 1 0 0 0-1 1zM18 9a4 4 0 0 1 0 6"/>',
+    card: '<rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20M6 15h4"/>',
+    wallet: '<path d="M3 7a2 2 0 0 1 2-2h13v4M3 7v11a2 2 0 0 0 2 2h15V9H5a2 2 0 0 1-2-2zM16 14.5h.01"/>',
+    book: '<path d="M12 6c-1.5-1.3-3.5-2-6-2H3v14h3c2.5 0 4.5.7 6 2m0-14c1.5-1.3 3.5-2 6-2h3v14h-3c-2.5 0-4.5.7-6 2m0-14v14"/>',
+    
     book: '<path d="M12 6c-1.5-1.3-3.5-2-6-2H3v14h3c2.5 0 4.5.7 6 2m0-14c1.5-1.3 3.5-2 6-2h3v14h-3c-2.5 0-4.5.7-6 2m0-14v14"/>',
     monitor: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
     gavel: '<path d="M14 4l6 6M11 7l6 6-3 3-6-6zM9 11l-6 6 3 3 6-6M13 21h8"/>',
@@ -14065,9 +14185,30 @@ const getLists = async () => {
         el('div', { class: 'phd' }, icon('crown', 'goldc'), el('h2', {}, 'هذه الميزة تتطلب اشتراك بريميوم نشط بالسيرفر')),
         el('p', { class: 'muted' }, 'قم بترقية السيرفر لفتح هذه الصفحة واستخدام ميزاتها.'),
         el('a', { class: 'btn primary small', href: `#/g/${gid}/premium` }, 'ترقية إلى البريميوم')));
+          function pagePayments(r) {
+    const fl = flasher();
+    const METHODS = [
+      ['PayPal', 'الدفع عبر حساب باي بال', 'wallet'],
+      ['Visa', 'الدفع ببطاقة فيزا / ماستركارد', 'card'],
+    ];
+    return el('div', { class: 'page' },
+      el('p', { class: 'eyebrow' }, 'PAYMENT METHODS'),
+      el('h1', { class: 'greet' }, 'طرق الدفع'),
+      el('p', { class: 'lead' }, 'اختر طريقة الدفع لتفعيل اشتراك البريميوم.'),
+      fl,
+      METHODS.map(([name, desc, ic]) => el('section', { class: 'panelc' },
+        el('div', { class: 'rowbar' },
+          el('div', { class: 'phd' }, el('span', { class: 'hbox gold' }, icon(ic)),
+            el('div', {}, el('h2', {}, name), el('small', { class: 'muted' }, desc))),
+          el('span', { class: 'pbadge' }, icon('clock'), 'قيد التجهيز')),
+        el('button', { class: 'btn primary wide', type: 'button',
+          onclick: () => fl.show(`الدفع عبر ${name} قيد التجهيز حالياً 🚧`, false) },
+          icon('crown'), 'تفعيل البريميوم عبر ' + name))));
+  }
   function guildPage(r) {
     switch (r.page) {
       case 'premium': return pagePremium(r);
+            case 'payments': return pagePayments(r);
       case 'botprofile': return pageBotProfile(r);
       case 'smart': return pageSmart(r);
       case 'general': return pageGeneral(r);
