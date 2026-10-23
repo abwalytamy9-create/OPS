@@ -291,6 +291,10 @@ function startBot(withMembers = true) {
     botReady = true;
         console.log('[emoji-check]', ['1561146785244647457','1561137631226761238','1561138316785623042','1561138833091989505','1561139734993178635','1561140231581995099','1561140861117399194','1561141648979796011','1561142611425890397','1561143201165738120','1561143717950390427','1561144118711689286','1561144785551495209','1561144796184191088','1561145245641478165'].map((id) => id + ':' + (client.emojis.cache.has(id) ? 'OK' : 'MISSING')).join('\n'));
     console.log(`Bot online: ${c.user.tag} (${c.guilds.cache.size} سيرفر)`);
+        fetch('https://api.groq.com/openai/v1/models', { headers: { authorization: 'Bearer ' + (process.env.GROQ_API_KEY || '') } })
+      .then((r) => r.json())
+      .then((j) => console.log('[groq-models]', (j.data || []).map((m) => m.id).join(', ')))
+      .catch((e) => console.error('[groq-models]', e.message));
         console.log('GuildMembers intent مفعّل بالكود:', client.options.intents.has(GatewayIntentBits.GuildMembers));
     tvSweep().catch(() => {});   // ← هون
         gvSweep().catch(() => {});
