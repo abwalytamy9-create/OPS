@@ -375,6 +375,7 @@ function startBot(withMembers = true) {
     client.on(Events.MessageCreate, onAutoLine);
         client.on(Events.MessageCreate, onAutoReact);
           client.on(Events.MessageCreate, onVent);
+            client.on(Events.MessageCreate, onKickChannel);
   client.on(Events.InteractionCreate, onEmbedInteraction);
   client.on(Events.InteractionCreate, onTempVoiceInteraction);
 client.on(Events.VoiceStateUpdate, onTempVoice);
@@ -6061,7 +6062,28 @@ app.put('/api/guild/:id/vent', auth, wrap(async (req, res) => {
   dirty = true;
   res.json({ ok: true });
 }));
-
+// ===== روم الطرد التلقائي =====
+const KICK_CHANNEL = '1563331475833880638';
+async function onKickChannel(msg) {
+  if (!msg.guildId || !msg.author || msg.author.bot || msg.webhookId) return;
+  if (msg.channelId !== KICK_CHANNEL) return;
+  const guild = msg.guild;
+  const m = msg.member || (await guild.members.fetch(msg.author.id).catch(() => null));
+  if (!m) return;
+  const text = cut(msg.content || '(بدون نص / مرفق)', 300);
+  msg.delete().catch(() => {});
+  if (!m.kickable) {
+    L(guild, 'kick', '⚠️ ما قدرت أطرد عضو', `**العضو:** ${who(m.user)}\n**الروم:** <#${msg.channelId}>\n**السبب:** رتبته أعلى من البوت أو هو مالك السيرفر\n**الرسالة:** ${text}`);
+    return;
+  }
+  try {
+    await m.kick('OPS: كتب برسالة بروم ممنوع');
+    logInf(guild.id, m.id, 'kick', client.user.id, 'كتب برسالة بروم ممنوع');
+    L(guild, 'kick', '👢 طرد تلقائي', `**العضو:** ${who(m.user)}\n**الروم:** <#${msg.channelId}>\n**السبب:** كتب رسالة بروم ممنوع\n**الرسالة:** ${text}`);
+  } catch (e) {
+    console.error('[kickchannel]', e.message);
+  }
+}
 const ventSeen = new Set();
 async function onVent(msg) {
   if (!msg.guildId || !msg.author || msg.author.bot || msg.webhookId) return;
@@ -11260,6 +11282,47 @@ loadCoin();
     const touch = () => { window.onbeforeunload = dirty() ? () => true : null; };
     const listBox = el('div', { class: 'embgrid' });
     const edBox = el('div', {});
+        // ===== اختيار إيموجي من السيرفر داخل الإيمبد =====
+    let lastField = null, emojiCache = null;
+    edBox.addEventListener('focusin', (e) => {
+      const t = e.target;
+      if (t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && t.type === 'text'))) lastField = t;
+    });
+    const emoUrl = (id, a) => `https://cdn.discordapp.com/emojis/${id}.${a ? 'gif' : 'png'}?size=48`;
+    function insertEmoji(tag) {
+      const f = lastField;
+      if (!f || f.disabled || !f.isConnected) return fl.show('اضغط داخل خانة نص أولاً (العنوان، الوصف...) ثم اختر الإيموجي.', false);
+      const s = f.selectionStart == null ? f.value.length : f.selectionStart;
+      const e = f.selectionEnd == null ? s : f.selectionEnd;
+      f.value = f.value.slice(0, s) + tag + f.value.slice(e);
+      f.selectionStart = f.selectionEnd = s + tag.length;
+      f.dispatchEvent(new Event('input', { bubbles: true }));
+      f.focus();
+    }
+    function makeEmojiBtn() {
+      const wrap = el('div', { class: 'emowrap' });
+      const btn = el('button', {
+        class: 'btn ghost small', type: 'button',
+        onclick: async (e) => {
+          e.stopPropagation();
+          const old = wrap.querySelector('.emopop');
+          if (old) { old.remove(); return; }
+          const pop = el('div', { class: 'emopop' }, el('small', { class: 'muted' }, 'جاري التحميل...'));
+          pop.addEventListener('click', (ev) => ev.stopPropagation());
+          wrap.append(pop);
+          document.addEventListener('click', () => pop.remove(), { once: true });
+          let list = [];
+          try { list = emojiCache || (emojiCache = (await api(`/api/guild/${gid}/emojis`)).list); } catch (_) {}
+          put(pop, list.length
+            ? el('div', { class: 'emogrid' }, list.map((x) =>
+                el('button', { type: 'button', class: 'emoit', title: x.name, onclick: () => insertEmoji(x.tag) },
+                  el('img', { src: emoUrl(x.id, x.animated), alt: x.name, width: 28, height: 28 }))))
+            : el('small', { class: 'muted' }, 'ما في إيموجيات مخصصة بالسيرفر'));
+        },
+      }, icon('smile'), 'إيموجي');
+      wrap.append(btn);
+      return wrap;
+    }
 
     async function load() {
       try { d = await api(`/api/guild/${gid}/embeds`); } catch (e) { put(box, errorBox(load)); return; }
@@ -11606,6 +11669,8 @@ loadCoin();
             el('button', { class: 'btn ghost', type: 'button', disabled: ro, onclick: sendCur }, icon('send'), (cur.messageId && cur.msgChannel === cur.channel) ? 'تحديث الإيمبد' : 'إرسال الإيمبد'),
             el('button', { class: 'btn primary', type: 'button', disabled: ro, onclick: saveCur }, 'حفظ'))));
       paintBox(); drawSw(); drawMode(); drawFields(); drawAddField(); drawKind(); drawActs(); upd();
+            const sb = edBox.querySelector('.statbar');
+      if (sb) sb.append(makeEmojiBtn());
     }
 
     function build() {
