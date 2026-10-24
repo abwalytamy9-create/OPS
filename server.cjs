@@ -16157,7 +16157,9 @@ const INDEX_HTML = `<!doctype html>
     <div class="xcard"><h3>أوامر ولوقات</h3><p>أوامر إدارية كاملة وسجلات مفصلة لكل حدث بالسيرفر.</p></div>
     <div class="xcard"><h3>تذاكر وترحيب</h3><p>نظام تذاكر، ترحيب بصور، رتب تلقائية، ومستويات.</p></div>
   </section>
-
+  <script>
+  (function(){if(!window.chatbase||window.chatbase("getState")!=="initialized"){window.chatbase=(...arguments)=>{if(!window.chatbase.q){window.chatbase.q=[]}window.chatbase.q.push(arguments)};window.chatbase=new Proxy(window.chatbase,{get(target,prop){if(prop==="q"){return target.q}return(...args)=>target(prop,...args)}})}const onLoad=function(){const script=document.createElement("script");script.src="https://www.chatbase.co/embed.min.js";script.id="2-OQa7Y4SpHBj5SjNjK-F";script.domain="www.chatbase.co";document.body.appendChild(script)};if(document.readyState==="complete"){onLoad()}else{window.addEventListener("load",onLoad)}})();
+  </script>
   <script src="/app.js"></script>
 </body>
 </html>`;
@@ -16187,6 +16189,10 @@ const DASH_HTML = `<!doctype html>
     <div id="panel" class="panel"></div>
   </aside>
   <main id="view" class="dmain"></main>
+    <script>
+  (function(){ ... كود Chatbase ... })();
+  </script>
+  <script src="/app.js"></script>
   <script src="/dash.js"></script>
 </body>
 </html>`;
