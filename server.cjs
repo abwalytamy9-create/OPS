@@ -1651,7 +1651,7 @@ app.put('/api/guild/:id/autoreply', auth, wrap(async (req, res) => {
   dirty = true;
   res.json({ ok: true, rules });
 }));
-
+const AR_IMG_LINK = /https?:\/\/[^\s<>]+?\.(?:png|jpe?g|gif|webp)(?:\?[^\s<>]*)?(?=\s|$)/gi;
 const arCool = new Map();
 setInterval(() => { const c = Date.now() - 60000; for (const [k, v] of arCool) if (v < c) arCool.delete(k); }, 60000);
 async function onAutoReply(msg) {
@@ -1677,7 +1677,12 @@ async function onAutoReply(msg) {
     if (now - (arCool.get(ck) || 0) < 4000) return;
     arCool.set(ck, now);
     const out = tpl(r.reply, { user: `<@${msg.author.id}>`, userName: msg.author.globalName || msg.author.username, server: msg.guild.name, memberCount: msg.guild.memberCount });
-    await msg.reply({ content: out.slice(0, 2000), allowedMentions: { parse: ['roles'], users: [msg.author.id], repliedUser: false } }).catch(() => {});
+    const imgs = out.match(AR_IMG_LINK) || [];
+const textOnly = out.replace(AR_IMG_LINK, '').replace(/\n{3,}/g, '\n\n').trim();
+const payload = { allowedMentions: { parse: ['roles'], users: [msg.author.id], repliedUser: false } };
+if (textOnly) payload.content = textOnly.slice(0, 2000);
+if (imgs.length) payload.embeds = imgs.slice(0, 4).map((u) => new EmbedBuilder().setColor(0x2b2d31).setImage(u));
+await msg.reply(payload).catch(() => {});
     return;
   }
 }
