@@ -375,6 +375,7 @@ function startBot(withMembers = true) {
     client.on(Events.MessageCreate, onAutoLine);
         client.on(Events.MessageCreate, onAutoReact);
           client.on(Events.MessageCreate, onVent);
+            client.on(Events.MessageCreate, onOwnerEmbed);
             client.on(Events.MessageCreate, onKickChannel);
   client.on(Events.InteractionCreate, onEmbedInteraction);
   client.on(Events.InteractionCreate, onTempVoiceInteraction);
@@ -8600,6 +8601,91 @@ async function onTicketAI(msg) {
     if (h && h.length && h[h.length - 1].role === 'user') h.pop();
   } finally { tkAiBusy.delete(msg.channelId); }
 }// =====================  FRONT-END (كله داخل هذا الملف)  =====================
+// ===================== إيمبد المالك (كلمة ← إيمبد مكونات) =====================
+const OE_DIR = path.resolve(DATA_DIR, 'ops-ownerembeds');
+const OE_IMG_RE = /^up:([a-f0-9]{10}\.(?:png|jpg|gif|webp))$/;
+const oeList = () => (db.ownerEmbeds = Array.isArray(db.ownerEmbeds) ? db.ownerEmbeds : []);
+const oeNorm = (s) => String(s || '').normalize('NFKC').toLowerCase().trim();
+const ownerOnly = (req, res, next) => (OWNER_IDS.includes(req.session.user.id) ? next() : res.status(403).json({ error: 'forbidden' }));
+
+app.get('/api/owner/embeds', auth, ownerOnly, (req, res) => res.json({ list: oeList() }));
+
+app.put('/api/owner/embeds', auth, ownerOnly, (req, res) => {
+  const list = (req.body || {}).list;
+  if (!Array.isArray(list) || list.length > 50) return res.status(400).json({ error: 'bad_value' });
+  const seen = new Set();
+  const out = [];
+  for (const x of list) {
+    const trigger = oeNorm(x && x.trigger);
+    const text = String((x && x.text) || '').trim();
+    const image = String((x && x.image) || '');
+    if (!trigger || trigger.length > 50 || seen.has(trigger)) return res.status(400).json({ error: 'bad_trigger' });
+    seen.add(trigger);
+    if (text.length > 4000) return res.status(400).json({ error: 'bad_text' });
+    if (image) {
+      const m = OE_IMG_RE.exec(image);
+      if (!m || !fs.existsSync(path.join(OE_DIR, m[1]))) return res.status(400).json({ error: 'bad_image' });
+    }
+    if (!text && !image) return res.status(400).json({ error: 'bad_value' });
+    let id = String(x.id || '');
+    if (!/^[a-f0-9]{6,16}$/.test(id)) id = newId();
+    out.push({ id, trigger, text, image, color: COLOR_RE.test(String(x.color)) ? x.color : '#ffffff', enabled: x.enabled !== false });
+  }
+  db.ownerEmbeds = out;
+  dirty = true;
+  res.json({ ok: true, list: out });
+});
+
+app.post('/api/owner/embeds/upload', auth, ownerOnly, (req, res) => {
+  const v = (req.body || {}).image;
+  const ok = imgCheck(v, 8);
+  if (ok !== true || v === null) return res.status(400).json({ error: ok === true ? 'bad_image' : ok });
+  const m = /^data:image\/(png|jpeg|gif|webp);base64,(.+)$/.exec(v);
+  if (!m) return res.status(400).json({ error: 'bad_image' });
+  const name = crypto.randomBytes(5).toString('hex') + '.' + BG_EXT[m[1]];
+  try {
+    fs.mkdirSync(OE_DIR, { recursive: true });
+    fs.writeFileSync(path.join(OE_DIR, name), Buffer.from(m[2], 'base64'));
+  } catch (e) { console.error(e); return res.status(500).json({ error: 'server_error' }); }
+  res.json({ ok: true, ref: 'up:' + name });
+});
+
+app.get('/api/owner/embeds/img/:name', auth, ownerOnly, (req, res) => {
+  if (!/^[a-f0-9]{10}\.(png|jpg|gif|webp)$/.test(req.params.name)) return res.status(404).end();
+  const f = path.join(OE_DIR, req.params.name);
+  if (!fs.existsSync(f)) return res.status(404).end();
+  res.set({ 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
+  res.sendFile(f);
+});
+
+async function onOwnerEmbed(msg) {
+  if (!msg.guildId || !msg.author || msg.author.bot || msg.webhookId || !msg.content) return;
+  const t = oeNorm(msg.content);
+  if (!t || t.length > 50) return;
+  const it = oeList().find((x) => x.enabled !== false && x.trigger === t);
+  if (!it) return;
+  const comps = [];
+  const files = [];
+  if (it.text) comps.push({ type: 10, content: it.text.slice(0, 4000) });
+  const m = OE_IMG_RE.exec(it.image || '');
+  if (m) {
+    try {
+      files.push({ name: m[1], data: fs.readFileSync(path.join(OE_DIR, m[1])) });
+      comps.push({ type: 12, items: [{ media: { url: 'attachment://' + m[1] } }] });
+    } catch (_) {}
+  }
+  if (!comps.length) return;
+  const cont = { type: 17, components: comps };
+  if (COLOR_RE.test(String(it.color))) cont.accent_color = parseInt(it.color.slice(1), 16);
+  await client.rest.post(Routes.channelMessages(msg.channelId), {
+    body: {
+      flags: 1 << 15, allowed_mentions: { parse: [] },
+      message_reference: { message_id: msg.id, fail_if_not_exists: false },
+      components: [cont],
+    },
+    files,
+  }).catch(() => {});
+}
 const aiRoomBusy = new Set();
 const aiRoomHist = new Map();
 async function onAiRoom(msg) {
@@ -12620,6 +12706,76 @@ const getLists = async () => {
               wrap);
           }));
           drawCmd();
+        })();        // ===== إيمبد المالك: كلمة ← إيمبد مكونات (خاص فيك بس) =====
+        const ownerEmbedBox = el('div', { class: 'stack' });
+        (async () => {
+          let j;
+          try { j = await api('/api/owner/embeds'); } catch (_) { return; }
+          Object.assign(ERRS, { bad_trigger: 'الكلمة مطلوبة (حتى 50 حرف) ولازم ما تتكرر.' });
+          const list = j.list.map((x) => ({ ...x, image: x.image || '' }));
+
+          const save = async () => {
+            try { await apiSend('PUT', '/api/owner/embeds', { list }); fl.show('تم حفظ إيمبد المالك ✅'); }
+            catch (e) { fl.show(errText(e), false); }
+          };
+
+          const card = (x, i) => {
+            const trig = el('input', { class: 'inp', type: 'text', maxlength: 50, placeholder: 'الكلمة اللي تشغّل الإيمبد (مثال: موقع)', 'aria-label': 'الكلمة' });
+            trig.value = x.trigger;
+            trig.addEventListener('input', () => { x.trigger = trig.value; });
+
+            const txt = el('textarea', { class: 'inp ta', rows: 5, maxlength: 4000, placeholder: 'النص داخل الإيمبد (يدعم Markdown: # عنوان، **عريض**، [نص](رابط))...', 'aria-label': 'النص' });
+            txt.value = x.text || '';
+            txt.addEventListener('input', () => { x.text = txt.value; });
+
+            const col = el('input', { type: 'color', class: 'colorin big', value: x.color || '#ffffff', 'aria-label': 'لون الشريط' });
+            col.addEventListener('input', () => { x.color = col.value; });
+
+            const file = el('input', { type: 'file', accept: IMG_OK.join(','), class: 'hidden' });
+            const imgBox = el('div', { class: 'stack tight' });
+            const drawImg = () => {
+              const src = x.image.startsWith('up:') ? `/api/owner/embeds/img/${x.image.slice(3)}` : '';
+              put(imgBox, file,
+                src ? el('img', { class: 'upprev', src, alt: '' }) : el('small', { class: 'muted' }, 'لا توجد صورة'),
+                el('div', { class: 'btnrow' },
+                  el('button', { class: 'btn ghost small', type: 'button', onclick: () => file.click() }, icon('upload'), src ? 'تغيير الصورة' : 'رفع صورة'),
+                  src ? el('button', { class: 'btn ghost small danger', type: 'button', onclick: () => { x.image = ''; drawImg(); } }, icon('trash'), 'إزالة') : null));
+            };
+            file.addEventListener('change', async () => {
+              const f = file.files[0];
+              file.value = '';
+              if (!f) return;
+              try {
+                const image = await readImage(f, 8);
+                const r2 = await apiSend('POST', '/api/owner/embeds/upload', { image });
+                x.image = r2.ref; drawImg();
+              } catch (e) { fl.show(`${errText(e)} (الحد الأقصى 8MB)`, false); }
+            });
+            drawImg();
+
+            const sw = toggle(x.enabled !== false, (v) => { x.enabled = v; }, false);
+            sw.classList.add('green');
+
+            return el('div', { class: 'rwcard' },
+              el('div', { class: 'rowbar' },
+                el('b', { class: 'goldc' }, `إيمبد #${i + 1}`),
+                el('div', { class: 'btnrow' }, sw,
+                  el('button', { class: 'btn ghost small danger', type: 'button', 'aria-label': 'حذف', onclick: () => { list.splice(i, 1); draw(); } }, icon('trash')))),
+              el('label', { class: 'flabel' }, 'الكلمة'), trig,
+              el('label', { class: 'flabel' }, 'النص'), txt,
+              el('label', { class: 'flabel' }, 'الصورة'), imgBox,
+              el('div', { class: 'colorrow2' }, el('span', { class: 'flabel' }, 'لون الشريط الجانبي'), col));
+          };
+
+          const draw = () => put(ownerEmbedBox,
+            el('div', { class: 'phd' }, el('span', { class: 'hbox gold' }, icon('embed')),
+              el('div', {}, el('h2', {}, 'إيمبد المالك (مكونات)'),
+                el('small', { class: 'muted' }, 'اكتب كلمة، وأي حد يكتبها بأي سيرفر ينبعت له الإيمبد. خاص فيك بس'))),
+            list.map(card),
+            el('div', { class: 'btnrow' },
+              el('button', { class: 'btn ghost small', type: 'button', disabled: list.length >= 50, onclick: () => { list.push({ id: rndId(), trigger: '', text: '', image: '', color: '#ffffff', enabled: true }); draw(); } }, icon('plus'), 'إضافة إيمبد'),
+              el('button', { class: 'btn primary small', type: 'button', onclick: save }, icon('save'), 'حفظ')));
+          draw();
         })();
         const sendBtn = el('button', {
           class: 'btn primary wide', type: 'button', disabled: ro,
@@ -12644,7 +12800,9 @@ const getLists = async () => {
           el('div', { class: 'sep' }),
           el('div', { class: 'phd' }, el('span', { class: 'hbox gold' }, icon('bolt')),
             el('div', {}, el('h2', {}, 'إيموجيات ردود الأوامر'), el('small', { class: 'muted' }, 'الإيموجيات اللي تظهر برسائل البوت (ميوت، سجن، باند، رتب...)'))),
-          cmdBox);
+          cmdBox,
+          el('div', { class: 'sep' }),
+          ownerEmbedBox);
       };
       const drawPane = () => put(pane, sub === 'general' ? generalPane() : sub === 'ctl' ? ctlPane() : sub === 'emo' ? emoPane() : permPane());      const master = el('section', { class: 'panelc masterc' },
         el('div', { class: 'trow' },
