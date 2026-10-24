@@ -2222,10 +2222,7 @@ async function renderWelcome(guild, user, cfg, vars) {
   const H = bgImg ? Math.max(300, Math.min(1400, Math.round(W * bgImg.height / bgImg.width))) : 450;
   const cv = canvasLib.createCanvas(W, H);
   const ctx2 = cv.getContext('2d');
-  const gr = ctx2.createLinearGradient(0, 0, W, H);
-  gr.addColorStop(0, '#16161c'); gr.addColorStop(1, '#2a2110');
-  ctx2.fillStyle = gr;
-  ctx2.fillRect(0, 0, W, H);
+
   if (bgImg) ctx2.drawImage(bgImg, 0, 0, W, H);
   const E = cfg.image.elements;
   try {
@@ -10913,7 +10910,7 @@ loadCoin();
           const imagePane = () => {
         const im = cfg.image, E = im.elements;
         const NAMES = { avatar: 'Avatar', username: 'Username', text: 'Text' };
-        const GRAD = 'linear-gradient(135deg, #16161c, #2a2110)';
+        const GRAD = 'repeating-conic-gradient(#1a1a1e 0% 25%, #222226 0% 50%) 50% / 24px 24px';
         const bgSrc = () => (im.bgUrl ? im.bgUrl : (d.hasBg ? `/api/guild/${gid}/welcome/bg?v=${d.bgAt}` : ''));
         const stage = el('div', { class: 'wstage' });
         const nodes = {};
@@ -10923,8 +10920,7 @@ loadCoin();
 
         const applyBg = () => {
           const s = bgSrc();
-          stage.style.backgroundImage = s ? `url("${s.replace(/"/g, '%22')}"), ${GRAD}` : GRAD;
-          stage.style.backgroundSize = '100% 100%, 100% 100%';
+          stage.style.background = s ? `url("${s.replace(/"/g, '%22')}") center / 100% 100% no-repeat` : GRAD;
           if (!s) { stage.style.aspectRatio = '1024 / 450'; return; }
           const pic = new Image();
           pic.onload = () => {
@@ -15553,7 +15549,7 @@ textarea.inp { resize: vertical; }
 .rdot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #5b5f6b; flex: none; }
 .ropt.on .rdot { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 45%, transparent 50%); }
 
-.wstage { position: relative; width: 100%; aspect-ratio: 1024 / 450; container-type: size; border-radius: 20px; overflow: hidden; border: 1px solid #1b1c23; background: linear-gradient(135deg, #16161c, #2a2110) center / cover no-repeat; }
+.wstage { position: relative; width: 100%; aspect-ratio: 1024 / 450; container-type: size; border-radius: 20px; overflow: hidden; border: 1px solid #1b1c23; background: repeating-conic-gradient(#1a1a1e 0% 25%, #222226 0% 50%) 50% / 24px 24px; }
 .dragx { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .dragx:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .dragx.selx { outline: 2px dashed color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: 4px; }
