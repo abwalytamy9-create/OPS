@@ -2229,25 +2229,42 @@ async function renderWelcome(guild, user, cfg, vars) {
   if (bgImg) ctx2.drawImage(bgImg, 0, 0, W, H);
   const E = cfg.image.elements;
   try {
-    const av = await canvasLib.loadImage(user.displayAvatarURL({ size: 256, extension: 'png' }));
+    const av = await canvasLib.loadImage(user.displayAvatarURL({ size: 256, extension: 'png', forceStatic: true }));
     const s = (E.avatar.size / 100) * W, sh = s * (E.avatar.ar || 1), cx = (E.avatar.x / 100) * W, cy = (E.avatar.y / 100) * H;
-    ctx2.save();
-    ctx2.beginPath(); ctx2.ellipse(cx, cy, s / 2, sh / 2, 0, 0, Math.PI * 2); ctx2.closePath(); ctx2.clip();
-    ctx2.drawImage(av, cx - s / 2, cy - sh / 2, s, sh);
-    ctx2.restore();
-    ctx2.lineWidth = 6; ctx2.strokeStyle = '#ffffff';
-    ctx2.beginPath(); ctx2.ellipse(cx, cy, s / 2, sh / 2, 0, 0, Math.PI * 2); ctx2.stroke();
+    
+    // فحص: هل الأفتار فيه شفافية؟
+    const tc = canvasLib.createCanvas(64, 64), tx = tc.getContext('2d');
+    tx.drawImage(av, 0, 0, 64, 64);
+    const px = tx.getImageData(0, 0, 64, 64).data;
+    let transparent = false;
+    for (let i = 3; i < px.length; i += 4) { if (px[i] < 250) { transparent = true; break; } }
+
+    if (transparent) {
+      // صورة بدون خلفية: نرسمها زي ما هي بدون دائرة ولا حدود ولا خلفية
+      ctx2.drawImage(av, cx - s / 2, cy - sh / 2, s, sh);
+    } else {
+      // صورة عادية: دائرة + حدود
+      ctx2.save();
+      ctx2.beginPath(); ctx2.ellipse(cx, cy, s / 2, sh / 2, 0, 0, Math.PI * 2); ctx2.closePath(); ctx2.clip();
+      ctx2.drawImage(av, cx - s / 2, cy - sh / 2, s, sh);
+      ctx2.restore();
+      ctx2.lineWidth = 6; ctx2.strokeStyle = '#ffffff';
+      ctx2.beginPath(); ctx2.ellipse(cx, cy, s / 2, sh / 2, 0, 0, Math.PI * 2); ctx2.stroke();
+    }
+    
   } catch (_) {}
   ctx2.textAlign = 'center'; ctx2.textBaseline = 'middle';
   const draw = (el, str) => {
     if (!String(str || '').trim()) return;
     ctx2.fillStyle = el.color;
-    ctx2.font = 'bold ' + Math.max(10, Math.round((el.size / 100) * H)) + 'px sans-serif';
+    ctx2.font = 'bold ' + Math.max(10, Math.round((el.size / 100) * H)) + 'px Cairo, "Segoe UI", Tahoma, Arial, sans-serif';
     ctx2.shadowColor = 'rgba(0,0,0,0.6)'; ctx2.shadowBlur = 8;
     ctx2.fillText(String(str).slice(0, 60), (el.x / 100) * W, (el.y / 100) * H, W * 0.92);
     ctx2.shadowBlur = 0;
   };
-  draw(E.username, user.globalName || user.username);
+  const shownName = user.globalName || user.username;
+  const fancyName = /[\u{1D400}-\u{1D7FF}\u{FF00}-\u{FFEF}\u{2100}-\u{214F}\u{24B6}-\u{24E9}\u{1F100}-\u{1F1FF}]/u.test(shownName);
+  draw(E.username, fancyName ? user.username : shownName);
   draw(E.text, tpl(E.text.content, vars));
   return cv.toBuffer('image/png');
 }
@@ -2270,7 +2287,9 @@ async function memberJoin(m, used, test) {
   if (!cfg.enabled) { console.log(`[welcome] ${g.name}: النظام مطفي. فعّل "تفعيل النظام" بالداشبورد واحفظ`); return; }
   const ct = Math.floor(m.user.createdTimestamp / 1000);
   const vars = {
-    user: `<@${m.id}>`, userName: m.user.globalName || m.user.username, username: m.user.username, userId: m.id,
+    user: `<@${m.id}>`,
+    userName: /[\u{1D400}-\u{1D7FF}\u{FF00}-\u{FFEF}\u{2100}-\u{214F}\u{24B6}-\u{24E9}\u{1F100}-\u{1F1FF}]/u.test(m.user.globalName || '') ? m.user.username : (m.user.globalName || m.user.username),
+    username: m.user.username, userId: m.id,
     memberCount: g.memberCount, server: g.name,
     inviter: inviter ? `<@${inviter.id}>` : 'غير معروف',
     inviterName: inviter ? (inviter.globalName || inviter.username) : 'غير معروف',
