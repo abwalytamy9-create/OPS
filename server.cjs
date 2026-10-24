@@ -1677,7 +1677,7 @@ async function onAutoReply(msg) {
     if (now - (arCool.get(ck) || 0) < 4000) return;
     arCool.set(ck, now);
     const out = tpl(r.reply, { user: `<@${msg.author.id}>`, userName: msg.author.globalName || msg.author.username, server: msg.guild.name, memberCount: msg.guild.memberCount });
-    await msg.reply({ content: out.slice(0, 2000), allowedMentions: { users: [msg.author.id], repliedUser: false } }).catch(() => {});
+    await msg.reply({ content: out.slice(0, 2000), allowedMentions: { parse: ['roles'], users: [msg.author.id], repliedUser: false } }).catch(() => {});
     return;
   }
 }
