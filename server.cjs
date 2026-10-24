@@ -2229,15 +2229,17 @@ async function renderWelcome(guild, user, cfg, vars) {
   if (bgImg) ctx2.drawImage(bgImg, 0, 0, W, H);
   const E = cfg.image.elements;
   try {
-    const av = await canvasLib.loadImage(user.displayAvatarURL({ size: 256, extension: 'png', forceStatic: true }));
+    const av = await canvasLib.loadImage(user.displayAvatarURL({ size: 512, extension: 'webp', forceStatic: true }));
     const s = (E.avatar.size / 100) * W, sh = s * (E.avatar.ar || 1), cx = (E.avatar.x / 100) * W, cy = (E.avatar.y / 100) * H;
     
     // فحص: هل الأفتار فيه شفافية؟
     const tc = canvasLib.createCanvas(64, 64), tx = tc.getContext('2d');
     tx.drawImage(av, 0, 0, 64, 64);
     const px = tx.getImageData(0, 0, 64, 64).data;
-    let transparent = false;
-    for (let i = 3; i < px.length; i += 4) { if (px[i] < 250) { transparent = true; break; } }
+    let clear = 0;
+    for (let i = 3; i < px.length; i += 4) { if (px[i] < 200) clear++; }
+    // لو أكتر من 3% من البكسلات شفافة = صورة بدون خلفية
+    const transparent = clear > (px.length / 4) * 0.03;
 
     if (transparent) {
       // صورة بدون خلفية: نرسمها زي ما هي بدون دائرة ولا حدود ولا خلفية
