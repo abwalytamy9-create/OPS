@@ -387,6 +387,7 @@ client.on(Events.VoiceStateUpdate, onTempVoice);
             client.on(Events.MessageCreate, onTicketShortcut);
             client.on(Events.MessageCreate, onTicketAI);
             client.on(Events.MessageCreate, onAiRoom);
+                        client.on(Events.MessageCreate, onTopsShortcut);
       client.on(Events.InteractionCreate, onApplyInteraction);
         client.on(Events.InteractionCreate, onPenaltyInteraction);
           client.on(Events.InteractionCreate, onInfractionInteraction);
@@ -847,7 +848,41 @@ app.get('/api/guild/:id', auth, wrap(async (req, res) => {
     canManage: info.canManage,
   });
 }));
-
+// ===================== سجلات التحديثات =====================
+const CL_SEC = {
+  botprofile: 'بروفايل البوت', premium: 'البريميوم', security: 'الحماية الذكية', automod: 'الحماية العامة', autoprot: 'الحماية التلقائية',
+  genprot: 'الحماية العامة', private: 'الحماية الخاصة', imgprot: 'حماية الصور', commands: 'إدارة الأوامر', logs: 'اللوق',
+  welcome: 'الترحيب والمغادرة', autoroles: 'الرتب التلقائية', rolepanels: 'الرتب القابلة للأخذ', autoreply: 'الرد التلقائي',
+  autoline: 'الخط التلقائي', autoreact: 'التفاعل التلقائي', autotops: 'نظام التوبات', levels: 'نظام المستويات', embeds: 'إيمبد',
+  vent: 'نظام الفضفضة', chsync: 'تنظيم القنوات', tempvoice: 'الروم المؤقت', tickets: 'التذاكر', tkshort: 'اختصارات التذاكر',
+  tkemojis: 'إيموجيات التذاكر', apply: 'التقديم', colors: 'نظام الألوان', economy: 'نظام OPS Coin',
+};
+const CL_SKIP = new Set(['upload', 'embimg', 'test', 'bg']);
+app.use('/api/guild/:id', (req, res, next) => {
+  if (req.method !== 'GET' && req.session && req.session.user) {
+    const p = req.originalUrl.split('?')[0].split('/').filter(Boolean);   // api, guild, id, section, ...
+    const gid = p[2], key = p[3], last = p[p.length - 1], method = req.method, u = req.session.user, b = req.body || {};
+    res.on('finish', () => {
+      if (!/^\d{15,25}$/.test(gid || '') || res.statusCode >= 400 || !CL_SEC[key] || CL_SKIP.has(last)) return;
+      const c = b.cfg && typeof b.cfg === 'object' ? b.cfg : b;
+      const st = typeof c.enabled === 'boolean' ? c.enabled : null;
+      const act = method === 'DELETE' ? 'حذف'
+        : (last === 'send' || last === 'panel') ? 'إرسال'
+        : (key === 'premium' && last === 'coin') ? 'شراء اشتراك'
+        : method === 'POST' ? 'إضافة' : method === 'PATCH' ? 'تعديل' : 'حفظ إعدادات';
+      db.changelog = db.changelog || {};
+      const l = db.changelog[gid] || (db.changelog[gid] = []);
+      l.push({ at: Date.now(), by: u.id, name: u.name, sec: CL_SEC[key], act, st });
+      if (l.length > 300) l.splice(0, l.length - 300);
+      dirty = true;
+    });
+  }
+  next();
+});
+app.get('/api/guild/:id/changelog', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res); if (!info) return;
+  res.json({ list: arr((db.changelog || {})[info.id]).slice().reverse() });
+}));
 const LEADER_KEY = { messages: 'w', xp: 'xp', invites: 'inv', voice: 'v' };
 app.get('/api/guild/:id/leaders', auth, wrap(async (req, res) => {
   const info = (await sharedGuilds(req)).find((g) => g.id === req.params.id);
@@ -1156,6 +1191,7 @@ const LOG_TYPES = {
     ['textmute', 'ميوت كتابي', 'سجل الميوت الكتابي', 'volume', 'mod'],
     ['reactions', 'التفاعلات', 'سجل إضافة وإزالة الرياكشنات', 'smile', 'messages'],
     ['rblock', 'حظر الرتب', 'سجل حظر وفك حظر الرتب للأعضاء', 'ban', 'roles', 1],
+        ['imgdel', 'حذف الوسائط', 'سجل حذف الصور الاحتيالية مع العقوبة والصور', 'image', 'messages'],
   ],
   general: [
     ['msgs', 'الرسائل النصية', 'سجل حذف وتعديل الرسائل', 'chat', 'messages'],
@@ -2809,6 +2845,9 @@ const CMD_EMO_ITEMS = [
   ['doc', 'معلومات العقوبة', '📄'],
     ['pg_prev', 'بوتات: زر الصفحة السابقة', '◀️'],
   ['pg_next', 'بوتات: زر الصفحة التالية', '▶️'],
+    ['tops_title', 'التوبات: عنوان اللائحة', '📋'],
+  ['tops_text', 'التوبات: أعلى كتابياً', '💬'],
+  ['tops_voice', 'التوبات: أعلى صوتياً', '🎧'],
 ];// يضيف تلقائياً كل إيموجي موجود بكود البوت لقائمة الإيموجيات
 {
   const norm = (s) => s.replace(/\uFE0F/g, '');
@@ -2837,7 +2876,7 @@ function applyEmo(text) {
   const cur = cmdEmojis();
   const map = new Map();
   for (const [k, , def] of CMD_EMO_ITEMS) {
-    if (['gift', 'vipgift', 'clearwarn', 'clearlog'].includes(k) || k.startsWith('inf_')) continue;
+    if (['gift', 'vipgift', 'clearwarn', 'clearlog'].includes(k) || k.startsWith('inf_') || k.startsWith('tops_')) continue;
     const bare = def.replace(/\uFE0F/g, '');
     for (const v of new Set([def, bare, bare + '\uFE0F'])) if (!map.has(v)) map.set(v, cur[k]);
   }
@@ -4924,12 +4963,16 @@ function onGuard(msg) {
 // ---------- حماية الصور ----------
 const IMG_DIR = path.resolve(DATA_DIR, 'ops-images');
 const imgItems = () => (db.imglib = db.imglib || { items: [] }).items;
+const imgItemsOf = (gid) => imgItems().filter((i) => i.gid === gid);
+// ترحيل مرة وحدة: الصور القديمة (بدون gid) تروح لسيرفرك. غيّر الايدي أو امسح السطرين إذا ما بدك
+for (const i of imgItems()) if (!i.gid) { i.gid = '1537751084171272213'; dirty = true; }
 const IMG_ACTIONS = ['delete', 'timeout', 'kick', 'ban'];
 const IMG_EXT = { png: 'png', jpeg: 'jpg', gif: 'gif', webp: 'webp' };
 function imgCfg(gid) {
   const s = S(gid).imgprot || {};
   return {
     enabled: !!s.enabled,
+    adult: !!s.adult,
     action: IMG_ACTIONS.includes(s.action) ? s.action : 'delete',
     roles: arr(s.roles), channels: arr(s.channels), disabled: arr(s.disabled),
   };
@@ -4943,11 +4986,11 @@ app.get('/api/guild/:id/imgprot', auth, wrap(async (req, res) => {
   const info = await ctxGuild(req, res); if (!info) return;
   const c = imgCfg(info.id);
   res.json({
-    enabled: c.enabled, action: c.action, roles: c.roles, channels: c.channels, guildPremium: info.premium,
+    enabled: c.enabled, adult: c.adult, adultReady: !!SE_USER, action: c.action, roles: c.roles, channels: c.channels, guildPremium: info.premium,
     canManage: info.canManage,
-    isBotOwner: OWNER_IDS.includes(req.session.user.id),
+    isBotOwner: info.canManage,   // صار أي أدمن بالسيرفر يقدر يرفع ويحذف
     roleList: roleList(info.id), channelList: textChannels(info.id),
-    items: imgItems().slice().sort((a, b) => b.added - a.added).map((i) => ({
+    items: imgItemsOf(info.id).sort((a, b) => b.added - a.added).map((i) => ({
       id: i.id, name: i.name, nsfw: !!i.nsfw, added: i.added, enabled: !c.disabled.includes(i.id),
     })),
   });
@@ -4959,6 +5002,7 @@ app.put('/api/guild/:id/imgprot', auth, wrap(async (req, res) => {
   const b = req.body || {};
   const cur = imgCfg(info.id);
   if ('enabled' in b) cur.enabled = b.enabled === true;
+    if ('adult' in b) cur.adult = b.adult === true;
   if ('action' in b) {
     if (!IMG_ACTIONS.includes(b.action)) return res.status(400).json({ error: 'bad_value' });
     cur.action = b.action;
@@ -4979,10 +5023,10 @@ app.post('/api/guild/:id/imgprot/toggle', auth, wrap(async (req, res) => {
   const want = b.enabled === true;
   const cur = imgCfg(info.id);
   if (b.all === true) {
-    cur.disabled = want ? [] : imgItems().map((i) => i.id);
+    cur.disabled = want ? [] : imgItemsOf(info.id).map((i) => i.id);
   } else {
     const id = String(b.id || '');
-    if (!imgItems().some((i) => i.id === id)) return res.status(404).json({ error: 'not_found' });
+    if (!imgItemsOf(info.id).some((i) => i.id === id)) return res.status(404).json({ error: 'not_found' });
     cur.disabled = cur.disabled.filter((x) => x !== id);
     if (!want) cur.disabled.push(id);
   }
@@ -4991,17 +5035,19 @@ app.post('/api/guild/:id/imgprot/toggle', auth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-app.get('/api/imglib/:id/file', auth, (req, res) => {
+app.get('/api/imglib/:id/file', auth, wrap(async (req, res) => {
   const it = imgItems().find((i) => i.id === req.params.id);
   if (!it) return res.status(404).end();
+  // لازم المستخدم أدمن بسيرفر الصورة
+  if (!(await sharedGuilds(req)).some((g) => g.id === it.gid)) return res.status(404).end();
   res.set({ 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
   res.type(it.ext);
   res.sendFile(path.join(IMG_DIR, it.id + '.' + it.ext));
-});
+}));
 
-// إضافة / حذف صور من المكتبة العامة (لمالكي البوت فقط — OWNER_IDS)
-app.post('/api/imglib', auth, (req, res) => {
-  if (!OWNER_IDS.includes(req.session.user.id)) return res.status(403).json({ error: 'forbidden' });
+// رفع / حذف صور مكتبة السيرفر (أدمن السيرفر + بريميوم، الـ middleware فوق بيتحقق من البريميوم)
+app.post('/api/guild/:id/imgprot/upload', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res, { manage: true }); if (!info) return;
   const b = req.body || {};
   if (b.image == null) return res.status(400).json({ error: 'bad_image' });
   const ok = imgCheck(b.image, 8);
@@ -5009,7 +5055,9 @@ app.post('/api/imglib', auth, (req, res) => {
   const m = /^data:image\/(png|jpeg|gif|webp);base64,(.+)$/.exec(b.image);
   const buf = Buffer.from(m[2], 'base64');
   const hash = crypto.createHash('sha256').update(buf).digest('hex');
-  if (imgItems().some((i) => i.hash === hash)) return res.status(400).json({ error: 'duplicate' });
+  const mine = imgItemsOf(info.id);
+  if (mine.length >= 200) return res.status(400).json({ error: 'limit_reached' });
+  if (mine.some((i) => i.hash === hash)) return res.status(400).json({ error: 'duplicate' });
   const id = crypto.randomBytes(6).toString('hex');
   const ex = IMG_EXT[m[1]];
   try {
@@ -5017,35 +5065,99 @@ app.post('/api/imglib', auth, (req, res) => {
     fs.writeFileSync(path.join(IMG_DIR, id + '.' + ex), buf);
   } catch (e) { console.error(e); return res.status(500).json({ error: 'server_error' }); }
   imgItems().push({
-    id, hash, size: buf.length, ext: ex, nsfw: b.nsfw === true, added: Date.now(), by: req.session.user.id,
+    id, gid: info.id, hash, ph: canvasLib ? await imgDHash(buf).catch(() => '') : '', size: buf.length, ext: ex, nsfw: b.nsfw === true, added: Date.now(), by: req.session.user.id,
     name: String(b.name || '').trim().slice(0, 60) || 'صورة احتيالية ' + (100000 + crypto.randomInt(900000)),
   });
   dirty = true;
   res.json({ ok: true, id });
-});
+}));
 
-app.delete('/api/imglib/:id', auth, (req, res) => {
-  if (!OWNER_IDS.includes(req.session.user.id)) return res.status(403).json({ error: 'forbidden' });
+app.delete('/api/guild/:id/imgprot/item/:iid', auth, wrap(async (req, res) => {
+  const info = await ctxGuild(req, res, { manage: true }); if (!info) return;
   const items = imgItems();
-  const i = items.findIndex((x) => x.id === req.params.id);
+  const i = items.findIndex((x) => x.id === req.params.iid && x.gid === info.id);
   if (i < 0) return res.status(404).json({ error: 'not_found' });
   const [it] = items.splice(i, 1);
   try { fs.unlinkSync(path.join(IMG_DIR, it.id + '.' + it.ext)); } catch (_) {}
   dirty = true;
   res.json({ ok: true });
-});
+}));
+// ---------- بصمة الصورة (لكشف الصور المشابهة) ----------
+const IMG_SIM_MAX = 24;   // أقصى فرق من 256. أقل = أدق، أكثر = بيمسك صور أكثر تعديلاً (وأخطاء أكثر)
+async function imgDHash(buf) {
+  const im = await canvasLib.loadImage(buf);
+  const W = 17, H = 16;
+  const cv = canvasLib.createCanvas(W, H), c = cv.getContext('2d');
+  c.imageSmoothingQuality = 'high';
+  c.drawImage(im, 0, 0, W, H);
+  const d = c.getImageData(0, 0, W, H).data;
+  const g = (x, y) => { const i = (y * W + x) * 4; return d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114; };
+  let bits = '';
+  for (let y = 0; y < H; y++) for (let x = 0; x < W - 1; x++) bits += g(x, y) > g(x + 1, y) ? '1' : '0';
+  return BigInt('0b' + bits).toString(16).padStart(64, '0');
+}
+const imgHam = (a, b) => { let x = BigInt('0x' + a) ^ BigInt('0x' + b), n = 0; while (x) { n += Number(x & 1n); x >>= 1n; } return n; };
+async function imgItemPh(it) {   // الصور القديمة بدون بصمة: بتنحسب مرة وحدة وبتنحفظ
+  if (it.ph) return it.ph;
+  try { it.ph = await imgDHash(fs.readFileSync(path.join(IMG_DIR, it.id + '.' + it.ext))); dirty = true; } catch (_) {}
+  return it.ph || null;
+}
 
-// ---------- محرك فحص الصور ----------
-async function imgPunish(msg, cfg, item) {
+// ---------- كشف +18 (Sightengine) ----------
+const SE_USER = process.env.SIGHTENGINE_USER || '';
+const SE_SECRET = process.env.SIGHTENGINE_SECRET || '';
+async function imgIsAdult(buf, ext) {
+  if (!SE_USER || !SE_SECRET) return false;
+  const fd = new FormData();
+  fd.append('media', new Blob([buf]), 'img.' + ext);
+  fd.append('models', 'nudity-2.1');
+  fd.append('api_user', SE_USER);
+  fd.append('api_secret', SE_SECRET);
+  const r = await fetch('https://api.sightengine.com/1.0/check.json', { method: 'POST', body: fd, signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error('sightengine ' + r.status);
+  const n = (await r.json()).nudity || {};
+  return Math.max(n.sexual_activity || 0, n.sexual_display || 0, n.erotica || 0) >= 0.7;
+}
+const IMG_ACT_TXT = { delete: 'حذف الرسالة فقط', timeout: 'حذف الرسالة + تايم أوت ساعة', kick: 'حذف الرسالة + طرد العضو', ban: 'حذف الرسالة + حظر العضو' };
+
+// لوق "حذف وسائط": بيبعت المعلومات الحقيقية + الصور اللي انحذفت
+async function imgLog(msg, applied, hits) {
+  try {
+    const t = logTarget(msg.guild, 'imgdel');
+    if (!t) return;
+    const sep = { type: 14, divider: true, spacing: 1 };
+    const txt = (c) => ({ type: 10, content: c });
+    const files = hits.slice(0, 10).map((h, n) => ({ name: `img${n}.${h.item.ext}`, data: h.buf }));
+    await client.rest.post(Routes.channelMessages(t.ch.id), {
+      body: {
+        flags: 1 << 15, allowed_mentions: { parse: [] },
+        components: [{ type: 17, accent_color: parseInt(t.c.color.slice(1), 16), components: [
+          txt('## 🖼️ حذف وسائط'),
+          txt(`**العضو :** <@${msg.author.id}>\n**القناة :** <#${msg.channelId}>`), sep,
+          txt(`**المشرف المسؤول :** <@${client.user.id}>\n**السبب :** نشر صورة احتيالية (${cut(hits.map((h) => h.label).join('، '), 300)})\n**العقوبة المنفذة :** ${applied}`), sep,
+          { type: 12, items: files.map((f) => ({ media: { url: 'attachment://' + f.name } })) }, sep,
+          txt(`-# السجلات - حذف وسائط • <t:${Math.floor(Date.now() / 1000)}:f>`),
+        ] }],
+      },
+      files,
+    });
+  } catch (e) { console.error('[imglog]', e.message); }
+}
+
+async function imgPunish(msg, cfg, hits) {
   await msg.delete().catch(() => {});
   const mem = msg.member;
-  const reason = 'OPS: صورة احتيالية ' + item.name;
+  const names= hits.map((h) => h.label).join('، ');
+  const reason = 'OPS: صورة احتيالية ' + names;
+  let applied = IMG_ACT_TXT.delete;
   try {
-    if (cfg.action === 'timeout' && mem && mem.moderatable) await mem.timeout(36e5, reason);
-    else if (cfg.action === 'kick' && mem && mem.kickable) await mem.kick(reason);
-    else if (cfg.action === 'ban' && mem && mem.bannable) await msg.guild.members.ban(msg.author.id, { reason, deleteMessageSeconds: 3600 });
+    if (cfg.action === 'timeout' && mem && mem.moderatable) { await mem.timeout(36e5, reason); applied = IMG_ACT_TXT.timeout; }
+    else if (cfg.action === 'kick' && mem && mem.kickable) { await mem.kick(reason); applied = IMG_ACT_TXT.kick; }
+    else if (cfg.action === 'ban' && mem && mem.bannable) { await msg.guild.members.ban(msg.author.id, { reason, deleteMessageSeconds: 3600 }); applied = IMG_ACT_TXT.ban; }
+    else if (cfg.action !== 'delete') applied += ' (ما قدرت أعاقبه: رتبته أعلى من البوت)';
   } catch (_) {}
-  logInf(msg.guildId, msg.author.id, 'image', client.user.id, item.name);
+  logInf(msg.guildId, msg.author.id, 'image', client.user.id, names);
+  await imgLog(msg, applied, hits);
   const n = await client.rest.post(Routes.channelMessages(msg.channelId), { body: {
     flags: 1 << 15, allowed_mentions: { users: [msg.author.id] },
     components: v2Comps(`🛡️ <@${msg.author.id}>، تم حذف صورة احتيالية.`),
@@ -5053,6 +5165,44 @@ async function imgPunish(msg, cfg, item) {
   if (n) setTimeout(() => client.rest.delete(Routes.channelMessage(msg.channelId, n.id)).catch(() => {}), 5000);
 }
 
+async function onImageScan(msg) {
+  if (!msg.guildId || !msg.author || msg.author.bot || msg.webhookId || !msg.attachments.size) return;
+  const cfg = imgCfg(msg.guildId);
+  if (!cfg.enabled) return;
+  if (!isPremium(msg.guildId)) return;
+  const lib = imgItemsOf(msg.guildId).filter((i) => !cfg.disabled.includes(i.id));
+  if (!lib.length && !cfg.adult) return;
+  const chIds = [msg.channelId, msg.channel && msg.channel.parentId].filter(Boolean);
+  if (cfg.channels.some((x) => chIds.includes(x))) return;
+  if (msg.member && msg.member.roles.cache.some((r) => cfg.roles.includes(r.id))) return;
+  const hits = [];
+  let n = 0;
+  for (const a of msg.attachments.values()) {
+    if (!a.contentType || !a.contentType.startsWith('image/') || a.size > 8 * 1048576) continue;
+    if (++n > 4) break;
+    try {
+      const r = await fetch(a.url, { signal: AbortSignal.timeout(10000) });
+      if (!r.ok) continue;
+      const buf = Buffer.from(await r.arrayBuffer());
+      const ext = (a.contentType.split('/')[1] || 'png').replace('jpeg', 'jpg').replace(/[^a-z0-9]/g, '').slice(0, 4) || 'png';
+      const h = crypto.createHash('sha256').update(buf).digest('hex');
+      const exact = lib.find((i) => i.hash === h);
+      if (exact) { hits.push({ buf, ext, label: exact.name }); continue; }
+      if (lib.length && canvasLib) {
+        const ph = await imgDHash(buf).catch(() => null);
+        if (ph) {
+          let best = null, bd = 1e9;
+          for (const it of lib) { const p = await imgItemPh(it); if (!p) continue; const dd = imgHam(ph, p); if (dd < bd) { bd = dd; best = it; } }
+          if (best && bd <= IMG_SIM_MAX) { hits.push({ buf, ext, label: 'مشابهة لـ ' + best.name }); continue; }
+        }
+      }
+      if (cfg.adult && a.size > 15000 && await imgIsAdult(buf, ext).catch((e) => { console.error('[adult]', e.message); return false; })) {
+        hits.push({ buf, ext, label: '+18' });
+      }
+    } catch (_) {}
+  }
+  if (hits.length) await imgPunish(msg, cfg, hits);
+}
 async function onImageScan(msg) {
   if (!msg.guildId || !msg.author || msg.author.bot || msg.webhookId || !msg.attachments.size) return;
   const cfg = imgCfg(msg.guildId);
@@ -8096,8 +8246,12 @@ const wdFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short' 
 function topsCfg(gid) {
   const s = (db.settings[gid] || {}).autotops || {};
   const prem = isPremium(gid);
+  const sc = s.shortcuts || {};
+  const shortcuts = {};
+  for (const p of TOPS_PERIODS) shortcuts[p] = [...new Set(arr(sc[p]).map((w) => arNorm(w)).filter((w) => w && w.length <= 30))].slice(0, prem ? 50 : 2);
   return {
     enabled: !!s.enabled,
+    shortcuts,
     items: arr(s.items).filter((x) => x && SNOW.test(String(x.channel))).slice(0, topsLimit(gid)).map((x) => ({
       id: String(x.id), channel: String(x.channel),
       type: TOPS_TYPES.includes(x.type) ? x.type : 'text',
@@ -8125,12 +8279,41 @@ app.put('/api/guild/:id/autotops', auth, wrap(async (req, res) => {
     const o = old.find((y) => y.id === id);
     return { id, channel: x.channel, type: x.type, period: x.period, role: x.role || null, time: x.time || '', last: o ? o.last : '' };
   });
-  S(info.id).autotops = { enabled: b.enabled === true, items };
+  const sc = {}, seenW = new Set(), lim = isPremium(info.id) ? 50 : 2;
+  for (const p of TOPS_PERIODS) {
+    const list = arr((b.shortcuts || {})[p]).map((w) => arNorm(w)).filter(Boolean);
+    if (list.length > lim) return res.status(400).json({ error: 'limit_reached' });
+    if (list.some((w) => w.length < 2 || w.length > 30 || /[<@#]/.test(w) || seenW.has(w))) return res.status(400).json({ error: 'bad_tkword' });
+    list.forEach((w) => seenW.add(w));
+    sc[p] = [...new Set(list)];
+  }
+  S(info.id).autotops = { enabled: b.enabled === true, items, shortcuts: sc };
   dirty = true;
   res.json({ ok: true });
 }));
 const TOPS_P = { daily: 'التوب اليومي', weekly: 'التوب الأسبوعي', monthly: 'التوب الشهري' };
 const TOPS_T = { text: 'كتابي', voice: 'صوتي', mixed: 'مدمج' };
+const TOPS_TTL = { daily: 'لهذا اليوم', weekly: 'لهذا الأسبوع', monthly: 'لهذا الشهر' };
+async function topsEmbed(guild, type, period, roleId, live) {
+  let rm = null;
+  if (roleId) { await guild.members.fetch().catch(() => {}); const r = guild.roles.cache.get(roleId); rm = new Set(r ? r.members.keys() : []); }
+  const keys = live
+    ? (period === 'daily' ? daysBack(1) : period === 'weekly' ? daysBack(7) : daysBack(30))
+    : (period === 'daily' ? daysBack(2).slice(0, 1) : period === 'weekly' ? daysBack(8).slice(0, 7) : daysBack(31).slice(0, 30));
+  const g = db.guilds[guild.id] || { members: {} };
+  const rows = Object.entries(g.members).map(([id, m]) => [id, sumDays(m, keys, 0), sumDays(m, keys, 1)]).filter(([id]) => !rm || rm.has(id));
+  const top = (idx) => rows.filter((x) => x[idx] > 0).sort((a, b) => b[idx] - a[idx]).slice(0, 5);
+  const E = cmdEmojis();
+  const em = (k) => (E[k] ? ' ' + E[k] : '');
+  const lines = (list, idx, f) => (list.length ? list.map((x, i) => `#${i + 1} | <@${x[0]}> \`${f(x[idx])}\``).join('\n') : 'لا توجد بيانات.');
+  const blocks = [];
+  if (type !== 'voice') blocks.push(`### أعلى 5 كتابياً${em('tops_text')}\n${lines(top(1), 1, (n) => NF(n) + ' رسالة')}`);
+  if (type !== 'text') blocks.push(`### أعلى 5 صوتياً${em('tops_voice')}\n${lines(top(2), 2, fmtMinS)}`);
+  return new EmbedBuilder().setColor(0x2b2d31)   // نفس لون الخلفية = بدون لون ظاهر
+    .setTitle(`${E.tops_title ? E.tops_title + ' ' : ''}لائحة متصدرين نقاط السيرفر ${TOPS_TTL[period]}`)
+    .setDescription(blocks.join('\n\n')).setTimestamp();
+}
+
 async function topsSweep() {
   const now = Date.now(), hm = hmFmt.format(now), today = dayKey(now), day = parts(now).day, wd = wdFmt.format(now);
   for (const guild of client.guilds.cache.values()) {
@@ -8144,20 +8327,26 @@ async function topsSweep() {
       if (!ch || typeof ch.send !== 'function') continue;
       const raw = arr((S(guild.id).autotops || {}).items).find((x) => x.id === it.id);
       if (raw) { raw.last = today; dirty = true; }
-      let rm = null;
-      if (it.role) { await guild.members.fetch().catch(() => {}); const r = guild.roles.cache.get(it.role); rm = new Set(r ? r.members.keys() : []); }
-      const keys = it.period === 'daily' ? daysBack(2).slice(0, 1) : it.period === 'weekly' ? daysBack(8).slice(0, 7) : daysBack(31).slice(0, 30);
-      const g = db.guilds[guild.id] || { members: {} };
-      const rows = Object.entries(g.members).map(([id, m]) => {
-        const w = sumDays(m, keys, 0), v = sumDays(m, keys, 1);
-        return [id, it.type === 'text' ? w : it.type === 'voice' ? v : w + v];
-      }).filter(([id, n]) => n > 0 && (!rm || rm.has(id))).sort((a, b) => b[1] - a[1]).slice(0, 10);
-      const val = (n) => (it.type === 'text' ? `${NF(n)} رسالة` : it.type === 'voice' ? fmtMinS(n) : `${NF(n)} نقطة`);
-      await ch.send({ embeds: [new EmbedBuilder().setColor(0xffffff).setTitle(`🏆 ${TOPS_P[it.period]} — ${TOPS_T[it.type]}`)
-        .setDescription(rows.length ? rows.map(([id, n], i) => `**${i + 1}.** <@${id}> — ${val(n)}`).join('\n') : 'لا توجد بيانات.').setTimestamp()],
-        allowedMentions: { parse: [] } }).catch(() => {});
+      const emb = await topsEmbed(guild, it.type, it.period, it.role, false);
+      await ch.send({ embeds: [emb], allowedMentions: { parse: [] } }).catch(() => {});
     }
   }
+}
+
+// اختصارات التوب: العضو يكتب الكلمة، البوت يرد باللائحة
+const topsCool = new Map();
+async function onTopsShortcut(msg) {
+  if (!msg.guildId || !msg.author || msg.author.bot || msg.webhookId || !msg.content) return;
+  if (!((db.settings[msg.guildId] || {}).autotops || {}).shortcuts) return;
+  const text = arNorm(msg.content);
+  if (!text || text.length > 30) return;
+  const period = TOPS_PERIODS.find((p) => topsCfg(msg.guildId).shortcuts[p].includes(text));
+  if (!period) return;
+  const k = msg.channelId + ':' + period, now = Date.now();
+  if (now - (topsCool.get(k) || 0) < 15000) return;   // منع السبام
+  topsCool.set(k, now);
+  const emb = await topsEmbed(msg.guild, 'mixed', period, null, true);
+  await msg.reply({ embeds: [emb], allowedMentions: { parse: [], repliedUser: false } }).catch(() => {});
 }
 app.listen(PORT, () => console.log(`OPS COIN site running on http://localhost:${PORT}`));
 
@@ -10593,8 +10782,8 @@ loadCoin();
         catch (e) { fl.show(errText(e), false); }
       }
       async function del(i) {
-        if (!confirm('حذف "' + i.name + '" من المكتبة لكل السيرفرات؟')) return;
-        try { await apiSend('DELETE', `/api/imglib/${i.id}`); fl.show('تم حذف الصورة'); await load(); }
+        if (!confirm('حذف "' + i.name + '" من مكتبة هذا السيرفر؟')) return;
+        try { await apiSend('DELETE', `/api/guild/${gid}/imgprot/item/${i.id}`); fl.show('تم حذف الصورة'); await load(); }
         catch (e) { fl.show(errText(e), false); }
       }
 
@@ -10622,7 +10811,11 @@ loadCoin();
       const sw = toggle(d.enabled, async (v) => {
         try { await apiSend('PUT', `/api/guild/${gid}/imgprot`, { enabled: v }); fl.show(v ? 'تم تفعيل حماية الصور' : 'تم تعطيل حماية الصور'); }
         catch (e) { fl.show(errText(e), false); sw.classList.toggle('on', !v); sw.setAttribute('aria-checked', String(!v)); }
-      }, ro);
+      }, ro);      const adultSw = toggle(d.adult, async (v) => {
+        try { await apiSend('PUT', `/api/guild/${gid}/imgprot`, { adult: v }); fl.show(v ? 'تم تفعيل حذف صور +18' : 'تم تعطيل حذف صور +18'); }
+        catch (e) { fl.show(errText(e), false); adultSw.classList.toggle('on', !v); adultSw.setAttribute('aria-checked', String(!v)); }
+      }, ro || !d.adultReady);
+      adultSw.classList.add('green');
       const act = el('select', { class: 'sel full', disabled: ro, 'aria-label': 'الإجراء المتخذ' },
         ACT.map(([v, t]) => el('option', { value: v, selected: v === d.action }, t)));
       const rp = multiPick(d.roleList, roles, 'اختر الرتب...', ro, (v) => { roles = v; });
@@ -10637,7 +10830,7 @@ loadCoin();
       if (d.isBotOwner) {
         const fileIn = el('input', { type: 'file', accept: IMG_OK.join(','), multiple: true, class: 'hidden' });
         const nameIn = el('input', { class: 'inp', type: 'text', maxlength: 60, placeholder: 'اسم الصورة (اختياري — لصورة وحدة فقط)', 'aria-label': 'اسم الصورة', disabled: !d.guildPremium });
-        const nsfwIn = el('input', { type: 'checkbox', id: 'nsfwchk', disabled: !d.guildPremium });
+
         fileIn.addEventListener('change', async () => {
           const files = [...fileIn.files];
           fileIn.value = '';
@@ -10645,7 +10838,7 @@ loadCoin();
           for (const f of files) {
             try {
               const image = await readImage(f, 8);
-              await apiSend('POST', '/api/imglib', { image, name: files.length === 1 ? nameIn.value : '', nsfw: nsfwIn.checked });
+              await apiSend('POST', `/api/guild/${gid}/imgprot/upload`, { image, name: files.length === 1 ? nameIn.value : '', nsfw: nsfwIn.checked });
               ok++;
             } catch (e) { fl.show(`${f.name}: ${errText(e)}`, false); }
           }
@@ -10654,7 +10847,7 @@ loadCoin();
         upload = el('section', { class: 'panelc' },
           el('div', { class: 'phd' }, el('span', { class: 'bar' }), el('div', {}, el('h2', {}, 'إضافة صور للمكتبة'), el('small', { class: 'muted' }, 'متاح لمالكي البوت فقط — PNG, JPG, WebP, GIF حتى 8MB'))),
           nameIn,
-          el('label', { class: 'checkrow', for: 'nsfwchk' }, nsfwIn, 'محتوى +18 (يتم تعتيم المعاينة)'),
+
           fileIn,
           el('button', { class: 'btn primary small', type: 'button', disabled: !d.guildPremium, onclick: () => fileIn.click() }, icon('upload'), 'اختيار صور ورفعها'),
           el('p', { class: 'fine start' }, 'الفحص يعتمد على مطابقة الملف نفسه (بصمة SHA-256)، فالصورة لازم تكون نفس الملف الأصلي.'));
@@ -10675,6 +10868,11 @@ loadCoin();
           el('div', { class: 'phd' }, el('span', { class: 'hbox gold' }, icon('grid')),
             el('div', {}, el('div', { class: 'btnrow' }, el('h2', {}, 'مكتبة الصور الاحتيالية العامة'), badge),
               el('small', { class: 'muted' }, 'يمكنك تعطيل أو تفعيل أي صورة احتيالية محددة لسيرفرك من القائمة التالية'))),
+                        el('div', { class: 'bhv' },
+            el('div', {},
+              el('div', { class: 'tline' }, el('b', {}, 'حذف أي صورة +18 تلقائياً'), el('em', { class: 'newb' }, 'جديد'), el('span', { class: 'pbadge' }, icon('crown'), 'بريميوم')),
+              el('small', { class: 'muted' }, d.adultReady ? 'أي صورة إباحية بتنحذف حتى لو مو بالمكتبة، وبتنفذ نفس العقوبة واللوق.' : 'الميزة تحتاج مفتاح الفحص (SIGHTENGINE_USER و SIGHTENGINE_SECRET) بمتغيرات السيرفر.')),
+            adultSw),
           el('div', { class: 'imgtools' }, search,
             el('button', { class: 'btn ghost small good', type: 'button', disabled: ro, onclick: () => toggleAll(true) }, 'تفعيل الجميع'),
             el('button', { class: 'btn ghost small danger', type: 'button', disabled: ro, onclick: () => toggleAll(false) }, 'تعطيل الجميع')),
@@ -13854,11 +14052,14 @@ const getLists = async () => {
     return box;
   }
   // ---- عناصر القائمة الجانبية الجديدة ----
-      function guildExtra(r) {
+        function guildExtra(r) {
     const base = `#/g/${r.gid}`;
+    const g = guilds.find((x) => x.id === r.gid);
     return [
+      { id: 'premium', label: 'البريميوم', ic: 'crown', href: `${base}/premium`, badge: g && g.premium ? 'مفعّل' : 'غير مفعّل' },
       { id: 'botprofile', label: 'بروفايل البوت', ic: 'user', href: `${base}/botprofile` },
-      { id: 'economy', label: 'نظام OPS Coin', ic: 'coin', children: [
+      { id: 'payments', label: 'طرق الدفع', ic: 'coins', href: `${base}/payments` },
+      { id: 'economy', label: 'نظام OPS كوين', ic: 'coin', children: [
         { id: 'eco-settings', label: 'إعدادات المالية', href: `${base}/eco-settings` },
         { id: 'eco-xp', label: 'توب 100 خبرة', href: `${base}/eco-xp` },
         { id: 'eco-rich', label: 'أغنى 100 في OPS', href: `${base}/eco-rich` },
@@ -13881,31 +14082,32 @@ const getLists = async () => {
         { id: 'log-admin', label: 'اللوقات الإدارية', href: `${base}/log-admin` },
         { id: 'log-general', label: 'اللوقات العامة', href: `${base}/log-general` },
       ] },
+      { id: 'colorsys', label: 'الألوان', ic: 'palette', children: [
+        { id: 'colors', label: 'إعدادات الألوان', href: `${base}/colors` },
+        { id: 'cmd-colors', label: 'أوامر الألوان', href: `${base}/cmd-colors` },
+      ] },
+      { id: 'ticketsys', label: 'التذاكر', ic: 'ticket', children: [
+        { id: 'tickets', label: 'إعدادات التذاكر', href: `${base}/tickets` },
+        { id: 'tktlog', label: 'سجل التذاكر', ic: 'doc', href: `${base}/tktlog` },
+        { id: 'tktshort', label: 'اختصارات التذاكر', ic: 'bolt', href: `${base}/tktshort` },
+      ] },
+      { id: 'applysys', label: 'التقديم', ic: 'clipboardCheck', children: [
+        { id: 'apply-forms', label: 'نماذج التقديم', ic: 'clipboardList', href: `${base}/apply-forms` },
+        { id: 'apply', label: 'نظام التقديم', ic: 'clipboardCheck', href: `${base}/apply` },
+      ] },
       { id: 'welcome', label: 'الترحيب والمغادرة', ic: 'userplus', href: `${base}/welcome` },
       { id: 'autoroles', label: 'الرتب التلقائية', ic: 'userplus', href: `${base}/autoroles` },
       { id: 'rolepanels', label: 'الرتب القابلة للأخذ', ic: 'tag', href: `${base}/rolepanels` },
       { id: 'autoreply', label: 'الرد التلقائي', ic: 'chat', href: `${base}/autoreply` },
       { id: 'autoline', label: 'الخط التلقائي', ic: 'image', href: `${base}/autoline` },
-            { id: 'autoreact', label: 'التفاعل التلقائي', ic: 'smileplus', href: `${base}/autoreact` },
+      { id: 'autoreact', label: 'التفاعل التلقائي', ic: 'smileplus', href: `${base}/autoreact` },
       { id: 'autotops', label: 'نظام التوبات', ic: 'trophy', href: `${base}/autotops` },
-      { id: 'colorsys', label: 'نظام الألوان', ic: 'palette', children: [
-        { id: 'colors', label: 'إعدادات الألوان', href: `${base}/colors` },
-        { id: 'cmd-colors', label: 'أوامر الألوان', href: `${base}/cmd-colors` },
-      ] },
+      { id: 'levels', label: 'نظام المستويات', ic: 'trend', href: `${base}/levels` },
       { id: 'embeds', label: 'إيمبد', ic: 'embed', href: `${base}/embeds` },
       { id: 'vent', label: 'نظام الفضفضة', ic: 'chat', href: `${base}/vent` },
-      { id: 'levels', label: 'نظام المستويات', ic: 'trend', href: `${base}/levels` },
       { id: 'chsync', label: 'تنظيم القنوات', ic: 'broom', href: `${base}/chsync` },
-      { id: 'tempvoice', label: 'الروم المؤقت', ic: 'mic', href: `${base}/tempvoice` },
-      { id: 'ticketsys', label: 'التذاكر', ic: 'ticket', children: [
-  { id: 'tickets', label: 'إعدادات التذاكر', href: `${base}/tickets` },
-  { id: 'tktlog', label: 'سجل التذاكر', ic: 'doc', href: `${base}/tktlog` },
-    { id: 'tktshort', label: 'اختصارات التذاكر', ic: 'bolt', href: `${base}/tktshort` },
-] },
-            { id: 'applysys', label: 'التقديم', ic: 'clipboardCheck', children: [
-        { id: 'apply-forms', label: 'نماذج التقديم', ic: 'clipboardList', href: `${base}/apply-forms` },
-        { id: 'apply', label: 'نظام التقديم', ic: 'clipboardCheck', href: `${base}/apply` },
-      ] },
+      { id: 'tempvoice', label: 'الرومات المؤقتة', ic: 'mic', href: `${base}/tempvoice` },
+      { id: 'changelog', label: 'سجلات التحديثات', ic: 'clipboardList', href: `${base}/changelog` },
     ];
   }
   function menuGroup(it, r) {
@@ -14483,6 +14685,36 @@ const getLists = async () => {
         el('button', { class: 'btn primary wide', type: 'button',
           onclick: () => fl.show(`الدفع عبر ${name} قيد التجهيز حالياً 🚧`, false) },
           icon('crown'), 'تفعيل البريميوم عبر ' + name))));
+  }  function pageChangelog(r) {
+    const gid = r.gid;
+    const box = el('div', { class: 'page' });
+    let list = [], q = '';
+    const out = el('div', { class: 'stack' });
+    const dt = (t) => new Date(t).toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' });
+    const search = el('input', { class: 'inp', type: 'search', placeholder: 'بحث بالقسم أو اسم الشخص...', 'aria-label': 'بحث' });
+    const draw = () => {
+      const l = list.filter((x) => !q || (x.sec + ' ' + x.act + ' ' + x.name).toLowerCase().includes(q));
+      put(out, l.length
+        ? l.map((x) => el('div', { class: 'lrow' },
+            icon(x.act === 'حذف' ? 'trash' : x.act === 'إرسال' ? 'send' : x.act === 'إضافة' ? 'plus' : 'pen', 'goldc'),
+            el('span', { class: 'nm' }, `${x.act} — ${x.sec}`,
+              el('small', { class: 'muted' }, 'بواسطة ' + x.name + (x.st === true ? ' · الحالة: مفعّل' : x.st === false ? ' · الحالة: معطّل' : ''))),
+            el('small', { class: 'muted' }, dt(x.at))))
+        : el('div', { class: 'empty boxed big' }, el('span', { class: 'emptyico' }, icon('doc')), el('h3', {}, 'لا توجد تحديثات مسجلة بعد')));
+    };
+    search.addEventListener('input', () => { q = search.value.trim().toLowerCase(); draw(); });
+    async function load() {
+      try { list = (await api(`/api/guild/${gid}/changelog`)).list; } catch (e) { put(box, errorBox(load)); return; }
+      put(box,
+        el('p', { class: 'eyebrow' }, 'CHANGE LOG'),
+        el('h1', { class: 'greet' }, 'سجلات التحديثات'),
+        el('p', { class: 'lead' }, 'كل تعديل أو تفعيل أو إضافة تمت من لوحة التحكم على هذا السيرفر.'),
+        el('section', { class: 'panelc' }, search), out);
+      draw();
+    }
+    put(box, el('p', { class: 'muted center' }, 'جاري التحميل...'));
+    load();
+    return box;
   }
   function guildPage(r) {
     switch (r.page) {
@@ -14522,6 +14754,7 @@ const getLists = async () => {
                   case 'autoreact': return pageAutoReact(r);
       case 'autotops': return pageAutoTops(r);      
       case 'colors': return pageColors(r);
+            case 'changelog': return pageChangelog(r);
       default: return r.page.startsWith('cmd-') ? pageCommands({ gid: r.gid, cat: r.page.slice(4) }) : pageGuild(r.gid);
     }
   }
@@ -14821,6 +15054,39 @@ const getLists = async () => {
             el('button', { class: 'btn ghost small', type: 'button', onclick: () => { adding = null; drawForm(); } }, 'إلغاء'))));
       }
       const sw = toggle(cfg.enabled, (v) => { cfg.enabled = v; touch(); }, ro); sw.classList.add('green');
+            const SC = [['daily', 'التوب اليومي'], ['weekly', 'التوب الأسبوعي'], ['monthly', 'التوب الشهري']];
+      const scMax = d.guildPremium ? 50 : 2;
+      cfg.shortcuts = cfg.shortcuts || { daily: [], weekly: [], monthly: [] };
+      const scCard = ([p, title]) => {
+        const list = (cfg.shortcuts[p] = cfg.shortcuts[p] || []);
+        const chips = el('div', { class: 'chips' });
+        const cnt = el('span', { class: 'pbadge' });
+        const inp = el('input', { class: 'inp', type: 'text', maxlength: 30, placeholder: 'اكتب الاختصار... (مثال: توب اليوم)', disabled: ro, 'aria-label': 'اختصار ' + title });
+        const draw = () => {
+          cnt.textContent = d.guildPremium ? `${list.length} (بدون حد)` : `${list.length}/${scMax}`;
+          put(chips, list.map((w, i) => el('span', { class: 'achip' }, el('b', { dir: 'auto' }, w),
+            el('button', { type: 'button', class: 'x', disabled: ro, 'aria-label': 'إزالة', onclick: () => { list.splice(i, 1); draw(); touch(); } }, '×'))));
+        };
+        const add = () => {
+          const w = inp.value.trim().replace(/\s+/g, ' ').toLowerCase();
+          if (!w) return;
+          if (w.length < 2 || /[<@#]/.test(w)) return fl.show(ERRS.bad_tkword, false);
+          if (list.length >= scMax) return fl.show(d.guildPremium ? 'وصلت للحد.' : 'الحد المجاني اختصارين لكل توب، والبريميوم بدون حد.', false);
+          if (SC.some(([q]) => (cfg.shortcuts[q] || []).includes(w))) return fl.show('هذا الاختصار مستخدم بتوب ثاني.', false);
+          list.push(w); inp.value = ''; draw(); touch();
+        };
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+        draw();
+        return el('div', { class: 'rwcard' },
+          el('div', { class: 'rowbar' }, el('b', {}, title), cnt),
+          chips,
+          el('div', { class: 'addrow' }, inp, el('button', { class: 'plus', type: 'button', disabled: ro, 'aria-label': 'إضافة', onclick: add }, icon('plus'))));
+      };
+      const scSection = el('section', { class: 'panelc' },
+        el('div', { class: 'phd' }, el('span', { class: 'hbox gold' }, icon('bolt')),
+          el('div', {}, el('h2', {}, 'اختصارات التوب'), el('small', { class: 'muted' }, 'العضو بيكتب الكلمة بأي شات والبوت بيرد بلائحة المتصدرين'))),
+        el('small', { class: 'muted' }, d.guildPremium ? 'بريميوم: اختصارات بدون عدد.' : 'مجاني: اختصارين لكل توب.'),
+        SC.map(scCard));
       bar = saveBar(dirty, save, () => { cfg = clone(base); adding = null; build(); });
       put(box,
         el('p', { class: 'eyebrow' }, 'AUTO TOPS'), el('h1', { class: 'greet' }, 'نظام التوبات'),
@@ -14994,8 +15260,7 @@ const getLists = async () => {
       head = [el('span', { class: 'hav' }, g ? guildIcon(g, 52) : null), el('span', {}, g ? g.name : 'السيرفر')];
       items = [
         { id: 'overview', label: 'نظرة عامة', ic: 'grid', href: `#/g/${r.gid}` },
-        { id: 'payments', label: 'طرق الدفع', ic: 'coins', href: `#/g/${r.gid}/payments` },
-        { id: 'premium', label: 'البريميوم', ic: 'crown', href: `#/g/${r.gid}/premium`, badge: g && g.premium ? 'مفعّل' : 'غير مفعّل' },
+
       ];
     } else {
       head = [el('span', { class: 'hav' }, userImg(52)), el('span', {}, me.name)];
@@ -16170,6 +16435,8 @@ body.has-savebar .dmain { padding-bottom: 150px; }
 .gico { transition: transform .3s ease; }
 .gico.flip { transform: rotate(180deg); }
 .sbbtns .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+::selection { background: #fff; color: #000; }
+::-moz-selection { background: #fff; color: #000; }
 `;
 
 
