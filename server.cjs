@@ -573,7 +573,9 @@ app.get('/bg.jpg', (req, res) => res.sendFile(path.join(__dirname, 'bg.jpg')));
 app.get('/app.js', (req, res) => res.type('application/javascript').send('(' + clientMain.toString() + ')();'));
 app.get('/dash.js', (req, res) => res.type('application/javascript').send('(' + dashMain.toString() + ')();'));
 const SITE_URL = (() => { try { return new URL(REDIRECT_URI).origin; } catch (_) { return ''; } })();
-
+app.get('/google95cc2a1469106e39.html', (req, res) => {
+  res.type('text/html').send('google-site-verification: google95cc2a1469106e39.html');
+});
 app.get('/robots.txt', (req, res) => {
   res.type('text/plain').send(
 `User-agent: *
