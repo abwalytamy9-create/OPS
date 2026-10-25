@@ -14106,7 +14106,7 @@ const getLists = async () => {
       { id: 'embeds', label: 'إيمبد', ic: 'embed', href: `${base}/embeds` },
       { id: 'vent', label: 'نظام الفضفضة', ic: 'chat', href: `${base}/vent` },
       { id: 'chsync', label: 'تنظيم القنوات', ic: 'broom', href: `${base}/chsync` },
-      { id: 'tempvoice', label: 'الرومات المؤقتة', ic: 'mic', href: `${base}/tempvoice` },
+      { id: 'tempvoice', label: 'الروم المؤقت', ic: 'mic', href: `${base}/tempvoice` },
       { id: 'changelog', label: 'سجلات التحديثات', ic: 'clipboardList', href: `${base}/changelog` },
     ];
   }
