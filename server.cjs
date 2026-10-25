@@ -14059,7 +14059,7 @@ const getLists = async () => {
       { id: 'premium', label: 'البريميوم', ic: 'crown', href: `${base}/premium`, badge: g && g.premium ? 'مفعّل' : 'غير مفعّل' },
       { id: 'botprofile', label: 'بروفايل البوت', ic: 'user', href: `${base}/botprofile` },
       { id: 'payments', label: 'طرق الدفع', ic: 'coins', href: `${base}/payments` },
-      { id: 'economy', label: 'نظام OPS كوين', ic: 'coin', children: [
+      { id: 'economy', label: 'نظام OPS coin', ic: 'coin', children: [
         { id: 'eco-settings', label: 'إعدادات المالية', href: `${base}/eco-settings` },
         { id: 'eco-xp', label: 'توب 100 خبرة', href: `${base}/eco-xp` },
         { id: 'eco-rich', label: 'أغنى 100 في OPS', href: `${base}/eco-rich` },
