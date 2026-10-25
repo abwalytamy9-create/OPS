@@ -572,8 +572,41 @@ app.get('/logo.png', (req, res) => res.sendFile(path.join(__dirname, 'logo.png')
 app.get('/bg.jpg', (req, res) => res.sendFile(path.join(__dirname, 'bg.jpg')));
 app.get('/app.js', (req, res) => res.type('application/javascript').send('(' + clientMain.toString() + ')();'));
 app.get('/dash.js', (req, res) => res.type('application/javascript').send('(' + dashMain.toString() + ')();'));
+const SITE_URL = (() => { try { return new URL(REDIRECT_URI).origin; } catch (_) { return ''; } })();
+
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain').send(
+`User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /api/
+Disallow: /transcripts/
+
+Sitemap: ${SITE_URL}/sitemap.xml
+`);
+});
+
+app.get('/sitemap.xml', (req, res) => {
+  res.type('application/xml').send(
+`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${SITE_URL}/</loc></url>
+</urlset>`);
+});
+
+app.get('/llms.txt', (req, res) => {
+  res.type('text/plain; charset=utf-8').send(
+`# OPS System
+> Arabic all-in-one Discord bot with a web dashboard: anti-nuke protection, moderation, tickets, logs, welcome images, levels, economy (OPS Coin), temp voice rooms, applications, auto-reply.
+
+- Website: ${SITE_URL}/
+- Dashboard: ${SITE_URL}/dashboard
+- Add the bot: ${INVITE_URL}
+- Support: ${SUPPORT_URL}
+`);
+});
 app.get('/', (req, res) => {
-  let html = INDEX_HTML;
+  let html = INDEX_HTML.replace(/__SITE__/g, SITE_URL);
   if (req.session.user) {
     html = html
       .replace('href="/login"', 'href="/dashboard"')
@@ -16160,7 +16193,7 @@ const INDEX_HTML = `<!doctype html>
     <div class="hero-in">
       <span class="tagpill">THE NEXT GENERATION BOT <i>✦</i></span>
       <h1 class="hero-title"><span>SYSTEM</span><em>.ONLINE</em></h1>
-      <p class="hero-desc">ارتقِ بمجتمعك مع أقوى نظام إدارة ذكي لسيرفرات ديسكورد. تصميم جريء، أداء فائق، وتحكم مطلق في كل التفاصيل.</p>
+      <p class="hero-desc">OPS System هو بوت ديسكورد عربي متكامل: حماية ضد التخريب (Anti-Nuke)، نظام تذاكر، أوامر إدارية، لوقات مفصلة، ترحيب بالصور، مستويات، واقتصاد داخلي، كله من لوحة تحكم سهلة.</p>
       <div id="notice" class="notice" role="alert">تعذّر تسجيل الدخول. حاول مرة أخرى.</div>
       <div class="hero-btns">
         <a class="hbtn solid" id="enterBtn" href="/login"><i class="boltbadge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg></i><span class="bt"><span id="enterT">تفعيل النظام</span></span></a>
@@ -16174,6 +16207,17 @@ const INDEX_HTML = `<!doctype html>
     <div class="xcard"><h3>أوامر ولوقات</h3><p>أوامر إدارية كاملة وسجلات مفصلة لكل حدث بالسيرفر.</p></div>
     <div class="xcard"><h3>تذاكر وترحيب</h3><p>نظام تذاكر، ترحيب بصور، رتب تلقائية، ومستويات.</p></div>
   </section>
+    <section class="explore" style="display:block">
+    <h2>أسئلة شائعة</h2>
+    <h3>شو هو OPS System؟</h3>
+    <p>بوت ديسكورد عربي متكامل لإدارة وحماية السيرفرات، مع لوحة تحكم على الويب.</p>
+    <h3>كيف أضيف البوت لسيرفري؟</h3>
+    <p>سجّل دخول بحساب ديسكورد من الموقع، اختر سيرفرك، واضغط "دعوة البوت".</p>
+    <h3>هل فيه نظام تذاكر وحماية من التخريب؟</h3>
+    <p>أكيد، فيه تذاكر مع سجلات، وحماية ذكية بحدود قابلة للتخصيص وقائمة بيضاء.</p>
+    <h3>هل البوت مجاني؟</h3>
+    <p>معظم الميزات مجانية، وفي نسخة OPS Premium بميزات إضافية.</p>
+  </section>
   <script>
   (function(){if(!window.chatbase||window.chatbase("getState")!=="initialized"){window.chatbase=(...arguments)=>{if(!window.chatbase.q){window.chatbase.q=[]}window.chatbase.q.push(arguments)};window.chatbase=new Proxy(window.chatbase,{get(target,prop){if(prop==="q"){return target.q}return(...args)=>target(prop,...args)}})}const onLoad=function(){const script=document.createElement("script");script.src="https://www.chatbase.co/embed.min.js";script.id="2-OQa7Y4SpHBj5SjNjK-F";script.domain="www.chatbase.co";document.body.appendChild(script)};if(document.readyState==="complete"){onLoad()}else{window.addEventListener("load",onLoad)}})();
   </script>
@@ -16186,7 +16230,16 @@ const DASH_HTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OPS COIN</title>
+  <title>OPS System — بوت ديسكورد عربي للحماية والتذاكر والإدارة</title>
+  <meta name="description" content="OPS System بوت ديسكورد متكامل مع لوحة تحكم: حماية ذكية ضد التخريب، أوامر إدارية، تذاكر، لوق، ترحيب بالصور، مستويات، واقتصاد OPS Coin.">
+  <link rel="canonical" href="__SITE__/">
+  <meta property="og:title" content="OPS System — Discord Bot">
+  <meta property="og:description" content="Arabic Discord bot: anti-nuke protection, tickets, logs, levels, economy and a full dashboard.">
+  <meta property="og:url" content="__SITE__/">
+  <meta property="og:image" content="__SITE__/logo.png">
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"OPS System","applicationCategory":"UtilitiesApplication","operatingSystem":"Discord","url":"__SITE__/","description":"بوت ديسكورد عربي متكامل: حماية ذكية، تذاكر، لوق، ترحيب، مستويات، اقتصاد، ولوحة تحكم."}
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&display=swap" rel="stylesheet">
