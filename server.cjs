@@ -8744,7 +8744,7 @@ HANDLERS.colors = async function (msg) {
   need(c.enabled && c.roles.some((id) => msg.guild.roles.cache.has(id)), 'نظام الألوان مو مفعّل أو ما في ألوان.');
   await msg.reply({ files: [{ attachment: await colorsImage(msg.guild, c), name: 'colors.png' }], allowedMentions: { parse: [], repliedUser: false } });
 };// ===================== مساعد التذاكر (Gemini مجاني) =====================
-const TK_AI_GUILDS = ['1537751084171272213'];
+const TK_AI_GUILDS = ['1537751084171272213', '1537751084171272213'];
 const TK_AI_KEY = process.env.GROQ_API_KEY || '';
 const TK_AI_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'allam-2-7b'];const tkAiHist = new Map();
 const tkAiBusy = new Set();
