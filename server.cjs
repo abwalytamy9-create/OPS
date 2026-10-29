@@ -8783,6 +8783,7 @@ function tkAiSystem(gid) {
 const AI_CHANNELS = ['1558190110112227468'];
 async function onTicketAI(msg) {
   if (!TK_AI_KEY || !msg.guildId) return;
+  if (!TK_AI_GUILDS.includes(msg.guildId)) return;
   if (!msg.author || msg.author.bot || msg.webhookId || !msg.content) return;
   const st = db.tickets && db.tickets[msg.guildId];
   const room = st && st.rooms && st.rooms[msg.channelId];
